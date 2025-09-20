@@ -1,4 +1,4 @@
-from typing import Callable, Optional, List, Tuple
+from typing import Optional
 
 class Ruleset:
     value: int
@@ -31,15 +31,15 @@ class Ruleset:
 class Ruleset_Test:
     value: int
     jump: bool
-    target_moves: Tuple[int, int]
-    target_takes: Tuple[int, int]
+    target_moves: tuple[int, int]
+    target_takes: tuple[int, int]
 
 class Piece:
     name: str
     piece_desc: str
     move_desc: str
 
-    rule_sets: List[Ruleset_Test]
-    max_range: 1
+    rule_sets: list[Ruleset_Test]
+    max_range: int
     move_count: int
     team: int
