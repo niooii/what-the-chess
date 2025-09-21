@@ -73,6 +73,7 @@ class Server:
     async def handle_packet(self, player: PlayerConnection, packet: Dict[str, Any]):
         # change name via a name packet
         mtype = packet["type"]
+        print(f"Processing packet for {player.player_state.name}: {packet}")
         if mtype == "name":
             player.player_state.name = packet["name"]
             print(f"Registered new player {packet["name"]}")
@@ -108,7 +109,7 @@ class Server:
 
             # then we join up
 
-            del self.matches[player.player_state.id]
+            del self.matches[other.player_state.id]
             player.match = other.match
 
             await self.broadcast({"type": "matchremove", "host_id": player.player_state.id})
@@ -120,9 +121,9 @@ class Server:
             config = {"example": "test"}
 
             await player.send({"type": "matchconfig", "config": config})
-            await other.send({"type": "matchconfig", "other_id": config})
+            await other.send({"type": "matchconfig", "config": config})
 
-        print(f"Processing packet for {player.player_state.name}: {packet}")
+
 
 
     async def handle_client(
@@ -143,7 +144,15 @@ class Server:
             asdict(p.player_state) for p in self.clients.values()
         ]
         await self.send(writer, {"type": "playerlist", "players": player_states})
-        
+
+        # send back all available matches
+        match_list = [
+            {"host_id": host_id, "host_name": match.p1.name}
+            for host_id, match in self.matches.items()
+            if match.p2 is None  # only send matches that are waiting for a second player
+        ]
+        await self.send(writer, {"type": "matchlist", "matches": match_list})
+
         await player_state.replicate(
             self, "playerjoin", exclude_self=False
         )
