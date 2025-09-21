@@ -4,11 +4,13 @@ import time
 from dataclasses import asdict
 from typing import Any, Dict, Optional
 
+from chess.match import Match
 from chess.player import PlayerState
 
 from .lobby import Lobby
 
 
+# Connection for a signle player
 class PlayerConnection:
     def __init__(
         self,
@@ -21,7 +23,7 @@ class PlayerConnection:
         self.server = server
         self.player_state = player_state
         # current game
-        game: Optional[Any] = None
+        self.match: Optional[Match] = None
 
     async def send(self, obj: Any) -> None:
         try:
@@ -31,28 +33,13 @@ class PlayerConnection:
         except Exception as e:
             print(f"Failed to send to client: {e}")
 
-    async def process_packet(self, packet: Dict[str, Any]) -> None:
-        if self.player_state.name is None:
-            # only accept a name packet
-            if packet["type"] == "name":
-                self.player_state.name = packet["name"]
-                self.player_state.id = self.server.id
-                print(f"Registered new player {packet["name"]}")
-                await self.player_state.replicate(
-                    self.server, "playerjoin", exclude_self=False
-                )
-                # send back all the other players
-                player_states = [
-                    asdict(p.player_state) for p in self.server.clients.values()
-                ]
-                await self.send({"type": "playerlist", "players": player_states})
-            return
-        print(f"Processing packet for {self.player_state.name}: {packet}")
 
-
-class ServerConnection:
+class Server:
     def __init__(self) -> None:
         self.clients: Dict[asyncio.StreamWriter, PlayerConnection] = {}
+        self.id_to_conn: Dict[int, PlayerConnection] = {}
+        # TODO! use match uid instead of player id key, this uses playerid key rn
+        self.matches: Dict[int, Match] = {}
         self.id = 0
 
     async def start(self):
@@ -83,6 +70,61 @@ class ServerConnection:
         for writer in disconnected:
             del self.clients[writer]
 
+    async def handle_packet(self, player: PlayerConnection, packet: Dict[str, Any]):
+        # change name via a name packet
+        mtype = packet["type"]
+        if mtype == "name":
+            player.player_state.name = packet["name"]
+            print(f"Registered new player {packet["name"]}")
+            await player.player_state.replicate(
+                self, "playermod", exclude_self=False
+            )
+
+        elif mtype == "matchcreate":
+            if player.match is not None:
+                return
+
+            match = Match(p1=player.player_state)
+            self.matches[player.player_state.id] = match
+            player.match = match
+
+            await self.broadcast({"type": "matchcreate", "host_id": player.player_state.id})
+
+        elif mtype == "matchjoin":
+            # if the requesting player is in a match/waiting for a match
+            if player.match is not None:
+                return
+            
+            # if the other player this one requested to join doesn't have a match
+            joining_id = packet["player_id"]
+            other = self.id_to_conn[joining_id]
+
+            if other.match is None:
+                return
+
+            # if there is still room in this match
+            if other.match.p2 is not None:
+                return
+
+            # then we join up
+
+            del self.matches[player.player_state.id]
+            player.match = other.match
+
+            await self.broadcast({"type": "matchremove", "host_id": player.player_state.id})
+
+            await player.send({"type": "matchstart", "other_id": other.player_state.id})
+            await other.send({"type": "matchstart", "other_id": other.player_state.id})
+
+            # TODO! generate gemini prompt here
+            config = {"example": "test"}
+
+            await player.send({"type": "matchconfig", "config": config})
+            await other.send({"type": "matchconfig", "other_id": config})
+
+        print(f"Processing packet for {player.player_state.name}: {packet}")
+
+
     async def handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
     ) -> None:
@@ -91,9 +133,20 @@ class ServerConnection:
 
         self.id += 1
 
-        player_state = PlayerState(name=None, connected_at=time.time())
+        player_state = PlayerState(name=None, id=self.id, connected_at=time.time())
         player_connection = PlayerConnection(self, writer, player_state)
         self.clients[writer] = player_connection
+        self.id_to_conn[player_state.id] = player_connection
+
+        # send back all the other players
+        player_states = [
+            asdict(p.player_state) for p in self.clients.values()
+        ]
+        await self.send(writer, {"type": "playerlist", "players": player_states})
+        
+        await player_state.replicate(
+            self, "playerjoin", exclude_self=False
+        )
 
         try:
             while True:
@@ -103,7 +156,7 @@ class ServerConnection:
 
                 try:
                     message: Dict[str, Any] = json.loads(data.decode().strip())
-                    await player_connection.process_packet(message)
+                    await self.handle_packet(player_connection, message)
                 except json.JSONDecodeError as e:
                     print(f"Invalid JSON from {client_addr}: {e}")
 
@@ -113,6 +166,7 @@ class ServerConnection:
             if writer in self.clients:
                 await player_state.replicate(self, "playerleave")
                 del self.clients[writer]
+                del self.id_to_conn[player_state.id]
 
             writer.close()
             await writer.wait_closed()

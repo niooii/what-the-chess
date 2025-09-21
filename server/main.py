@@ -4,10 +4,12 @@ import time
 from typing import Any, Dict
 
 from chess.player import PlayerState
-from .conn import ServerConnection
+
+from .conn import Server
+
 
 async def main() -> None:
-    server_conn = ServerConnection()
+    server_conn = Server()
 
     await server_conn.start()
 

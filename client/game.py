@@ -208,6 +208,10 @@ class ClientGame:
                 player_count = len(self.players)
                 self.status_label.set_text(f"Players in lobby: {player_count}")
 
+        elif mtype == "playermod":
+            player: PlayerState = PlayerState(**message["player"])
+            self.players[player.id] = player
+
         elif mtype == "playerlist":
             # update playerlist
             self.players.update(
