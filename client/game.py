@@ -65,6 +65,30 @@ class ClientGame:
 
         self.create_lobby_ui()
 
+    def is_my_turn(self) -> bool:
+        return self.game is not None and self.game.current_turn == self.my_team
+
+    def board_display_coords(self, row: int, col: int) -> tuple[int, int]:
+        if self.my_team == 1:
+            return row, self.grid_size - 1 - col
+        return self.grid_size - 1 - row, col
+
+    def board_logical_coords(self, display_row: int, display_col: int) -> tuple[int, int]:
+        if self.my_team == 1:
+            return display_row, self.grid_size - 1 - display_col
+        return self.grid_size - 1 - display_row, display_col
+
+    def get_team_color(self, team: int) -> tuple[int, int, int]:
+        return COLORS["accent_light"] if team == 0 else COLORS["text_muted"]
+
+    def get_contrast_color(self, team: int) -> tuple[int, int, int]:
+        return COLORS["text_muted"] if team == 0 else COLORS["accent_light"]
+
+    def get_piece_text_color(self, piece_team: int) -> tuple[int, int, int]:
+        if piece_team == self.my_team:
+            return self.get_contrast_color(self.my_team)
+        return self.get_contrast_color(1 - self.my_team)
+
     def create_lobby_ui(self):
         input_rect = pygame.Rect(
             WINDOW_WIDTH // 2 - 200, WINDOW_HEIGHT // 2 + 50, 400, 50
@@ -205,75 +229,49 @@ class ClientGame:
 
                     # ensure coordinates are within bounds
                     if 0 <= col < self.grid_size and 0 <= display_row < self.grid_size:
-                        print("BRANCH 1: Within bounds")
-                        # Convert display row back to logical board row
-                        logical_row = self.grid_size - 1 - display_row
-                        clicked_pos = (logical_row, col)
-                        print(f"BRANCH 2: Clicked at logical_row={logical_row}, col={col}, pos={clicked_pos}")
+                        logical_row, logical_col = self.board_logical_coords(display_row, col)
+                        clicked_pos = (logical_row, logical_col)
 
                         if self.game is None:
-                            print("BRANCH 3: Game is None!")
                             return
 
-                        print("BRANCH 4: Game exists, getting piece")
                         piece = self.game.board.get_piece(clicked_pos)
-                        print(f"BRANCH 5: Piece at {clicked_pos}: {piece}")
 
                         if self.selected_tile is None:
-                            print("BRANCH 6: No piece currently selected")
-                            # No piece selected, try to select this tile
-                            if piece is not None:
-                                print(f"BRANCH 7: Found piece: {piece.name}, team: {piece.team}")
-                                # Only select our own pieces
-                                if piece.team == self.my_team:
-                                    print(f"BRANCH 8: OUR PIECE! Selecting piece at {clicked_pos}")
-                                    self.selected_tile = clicked_pos
+                            if piece is not None and piece.team == self.my_team:
+                                self.selected_tile = clicked_pos
+                                if self.is_my_turn():
                                     self.valid_moves = self.game.board.get_valid_actions(clicked_pos) or []
-                                    print(f"BRANCH 9: Selected tile set to: {self.selected_tile}")
-                                    print(f"BRANCH 10: Valid moves: {self.valid_moves}")
                                 else:
-                                    print(f"BRANCH 11: Enemy piece, team {piece.team}, not our team {self.my_team}")
+                                    self.valid_moves = []
                             else:
-                                print("BRANCH 12: No piece at clicked position")
-                        else:
-                            print(f"BRANCH 13: Piece already selected: {self.selected_tile}")
-                            # Piece is selected
-                            if clicked_pos in self.valid_moves:
-                                print("BRANCH 14: Valid move - applying locally then sending to server")
-                                # Apply move locally first
-                                success = self.game.move_piece(self.selected_tile, clicked_pos)
-                                if success:
-                                    # Update match move counter
-                                    if self.current_match:
-                                        self.current_match.move += 1
-                                    # Send to server
-                                    asyncio.create_task(self.send_move(self.selected_tile, clicked_pos))
                                 self.selected_tile = None
                                 self.valid_moves = []
-                            else:
-                                print("BRANCH 15: Not a valid move, checking other options")
-                                # Check if clicking on another piece to select
-                                if self.game and self.game.board.get_piece(clicked_pos):
-                                    print("BRANCH 16: Clicking on another piece")
-                                    piece = self.game.board.get_piece(clicked_pos)
-                                    if piece.team == self.my_team:
-                                        print("BRANCH 17: Selecting new piece")
-                                        # Select new piece
+                        else:
+                            if self.is_my_turn():
+                                if clicked_pos in self.valid_moves:
+                                    success = self.game.move_piece(self.selected_tile, clicked_pos)
+                                    if success:
+                                        if self.current_match:
+                                            self.current_match.move += 1
+                                        asyncio.create_task(self.send_move(self.selected_tile, clicked_pos))
+                                    self.selected_tile = None
+                                    self.valid_moves = []
+                                else:
+                                    next_piece = self.game.board.get_piece(clicked_pos) if self.game else None
+                                    if next_piece and next_piece.team == self.my_team:
                                         self.selected_tile = clicked_pos
                                         self.valid_moves = self.game.board.get_valid_actions(clicked_pos) or []
                                     else:
-                                        print("BRANCH 18: Enemy piece - deselecting")
-                                        # Deselect
                                         self.selected_tile = None
                                         self.valid_moves = []
+                            else:
+                                next_piece = self.game.board.get_piece(clicked_pos) if self.game else None
+                                if next_piece and next_piece.team == self.my_team:
+                                    self.selected_tile = clicked_pos
                                 else:
-                                    print("BRANCH 19: Empty square - deselecting")
-                                    # Empty square - deselect
                                     self.selected_tile = None
-                                    self.valid_moves = []
-                    else:
-                        print("BRANCH 20: Click outside bounds")
-
+                                self.valid_moves = []
         elif event.type == pygame.MOUSEMOTION:
             if self.game_state == "game" and hasattr(self, "board_x"):
                 mouse_pos = pygame.mouse.get_pos()
@@ -290,9 +288,8 @@ class ClientGame:
 
                     # ensure coordinates are within bounds
                     if 0 <= col < self.grid_size and 0 <= display_row < self.grid_size:
-                        # Convert display row back to logical board row
-                        logical_row = self.grid_size - 1 - display_row
-                        self.hovered_tile = (col, logical_row)
+                        logical_row, logical_col = self.board_logical_coords(display_row, col)
+                        self.hovered_tile = (logical_row, logical_col)
                     else:
                         self.hovered_tile = None
                 else:
@@ -384,6 +381,74 @@ class ClientGame:
         )
         self.screen.blit(text_surface, text_rect)
 
+    def draw_piece_info_box(self, piece):
+        if not piece:
+            return
+
+        # info box on left side
+        box_width = 300
+        box_height = 200
+        box_x = 50
+        box_y = WINDOW_HEIGHT // 2 - box_height // 2
+
+        # background
+        pygame.draw.rect(self.screen, COLORS["bg_light"],
+                        (box_x, box_y, box_width, box_height))
+        pygame.draw.rect(self.screen, COLORS["accent"],
+                        (box_x, box_y, box_width, box_height), 2)
+
+        font_title = pygame.font.Font(None, 28)
+        font_text = pygame.font.Font(None, 20)
+
+        y_offset = box_y + 10
+
+        # piece name
+        name_text = font_title.render(piece.name, True, COLORS["text"])
+        self.screen.blit(name_text, (box_x + 10, y_offset))
+        y_offset += 35
+
+        # piece description
+        desc_lines = []
+        words = piece.piece_desc.split()
+        current_line = ""
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            if font_text.size(test_line)[0] < box_width - 20:
+                current_line = test_line
+            else:
+                if current_line:
+                    desc_lines.append(current_line)
+                current_line = word
+        if current_line:
+            desc_lines.append(current_line)
+
+        for line in desc_lines:
+            desc_text = font_text.render(line, True, COLORS["text_muted"])
+            self.screen.blit(desc_text, (box_x + 10, y_offset))
+            y_offset += 20
+
+        y_offset += 10
+
+        # movement description
+        move_lines = []
+        words = piece.move_desc.split()
+        current_line = ""
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            if font_text.size(test_line)[0] < box_width - 20:
+                current_line = test_line
+            else:
+                if current_line:
+                    move_lines.append(current_line)
+                current_line = word
+        if current_line:
+            move_lines.append(current_line)
+
+        for line in move_lines:
+            move_text = font_text.render(line, True, COLORS["accent_light"])
+            self.screen.blit(move_text, (box_x + 10, y_offset))
+            y_offset += 20
+
     def draw_chess_board(self):
         board_size = 600
         board_x = (WINDOW_WIDTH - board_size) // 2
@@ -396,13 +461,13 @@ class ClientGame:
         self.board_size = board_size
         self.square_size = square_size
 
-        # draw checkerboard (flipped so row 0 at bottom)
+        # draw checkerboard respecting board orientation
         for row in range(self.grid_size):
             for col in range(self.grid_size):
                 color = COLORS["bg_light"] if (row + col) % 2 == 0 else COLORS["accent"]
-                display_row = self.grid_size - 1 - row  # flip vertically
+                display_row, display_col = self.board_display_coords(row, col)
                 square_rect = pygame.Rect(
-                    board_x + col * square_size,
+                    board_x + display_col * square_size,
                     board_y + display_row * square_size,
                     square_size,
                     square_size,
@@ -410,23 +475,23 @@ class ClientGame:
                 pygame.draw.rect(self.screen, color, square_rect)
 
         # draw valid move highlights (red squares)
-        for move_pos in self.valid_moves:
-            move_row, move_col = move_pos
-            display_row = self.grid_size - 1 - move_row  # flip vertically
-            move_rect = pygame.Rect(
-                board_x + move_col * square_size,
-                board_y + display_row * square_size,
-                square_size,
-                square_size,
-            )
-            pygame.draw.rect(self.screen, (255, 100, 100), move_rect, 3)
+        if self.is_my_turn():
+            for move_row, move_col in self.valid_moves:
+                display_row, display_col = self.board_display_coords(move_row, move_col)
+                move_rect = pygame.Rect(
+                    board_x + display_col * square_size,
+                    board_y + display_row * square_size,
+                    square_size,
+                    square_size,
+                )
+                pygame.draw.rect(self.screen, (255, 100, 100), move_rect, 3)
 
         # draw selection outline (selected piece border)
         if self.selected_tile:
             selected_row, selected_col = self.selected_tile
-            display_row = self.grid_size - 1 - selected_row  # flip vertically
+            display_row, display_col = self.board_display_coords(selected_row, selected_col)
             selected_rect = pygame.Rect(
-                board_x + selected_col * square_size,
+                board_x + display_col * square_size,
                 board_y + display_row * square_size,
                 square_size,
                 square_size,
@@ -435,10 +500,10 @@ class ClientGame:
 
         # draw hover outline
         if self.hovered_tile:
-            hover_col, hover_row = self.hovered_tile
-            display_row = self.grid_size - 1 - hover_row  # flip vertically
+            hover_row, hover_col = self.hovered_tile
+            display_row, display_col = self.board_display_coords(hover_row, hover_col)
             hover_rect = pygame.Rect(
-                board_x + hover_col * square_size,
+                board_x + display_col * square_size,
                 board_y + display_row * square_size,
                 square_size,
                 square_size,
@@ -455,18 +520,20 @@ class ClientGame:
                     if piece is not None:
                         piece_count += 1
                         piece_text = piece.name[:4].upper()
-                        color = COLORS["accent_light"] if piece.team == 0 else COLORS["text_muted"]
-                        text_surface = piece_font.render(piece_text, True, color)
-                        display_row = self.grid_size - 1 - row  # flip vertically
+                        text_color = self.get_piece_text_color(piece.team)
+                        text_surface = piece_font.render(piece_text, True, text_color)
+                        display_row, display_col = self.board_display_coords(row, col)
+                        center = (
+                            board_x + display_col * square_size + square_size // 2,
+                            board_y + display_row * square_size + square_size // 2,
+                        )
+                        circle_color = self.get_team_color(piece.team)
+                        circle_radius = max(square_size // 2 - 6, square_size // 3)
+                        pygame.draw.circle(self.screen, circle_color, center, circle_radius, 2)
                         text_rect = text_surface.get_rect(
-                            center=(
-                                board_x + col * square_size + square_size // 2,
-                                board_y + display_row * square_size + square_size // 2
-                            )
+                            center=center
                         )
                         self.screen.blit(text_surface, text_rect)
-            if piece_count == 0:
-                print("No pieces found on board!")
 
         # draw border
         pygame.draw.rect(
@@ -480,16 +547,24 @@ class ClientGame:
         font = pygame.font.Font(None, 36)
 
         # you at bottom right
-        you_text = font.render("YOU", True, COLORS["accent_light"])
+        you_color = self.get_contrast_color(self.my_team)
+        you_text = font.render("YOU", True, you_color)
         you_rect = you_text.get_rect(
             bottomright=(board_x + board_size + 120, board_y + board_size + 40)
         )
         self.screen.blit(you_text, you_rect)
 
         # opponent name (top left)
-        opp_text = font.render(self.opponent_name, True, COLORS["text_muted"])
+        opp_color = self.get_contrast_color(1 - self.my_team)
+        opp_text = font.render(self.opponent_name, True, opp_color)
         opp_rect = opp_text.get_rect(topleft=(board_x - 120, board_y - 40))
         self.screen.blit(opp_text, opp_rect)
+
+        # draw piece info box if hovering over a piece
+        if self.hovered_tile and self.game and self.game.board:
+            hovered_piece = self.game.board.get_piece(self.hovered_tile)
+            if hovered_piece:
+                self.draw_piece_info_box(hovered_piece)
 
     def render_gui(self, time_delta):
         # clear screen w the color thing
@@ -527,6 +602,8 @@ class ClientGame:
 
     async def handle_packet(self, message: Dict[str, Any]):
         mtype = message["type"]
+
+        print(message)
 
         if mtype == "playerjoin":
             player: PlayerState = PlayerState(**message["player"])
@@ -579,6 +656,9 @@ class ClientGame:
                 del self.available_matches[host_id]
 
         elif mtype == "matchstart":
+            if "team" in message:
+                self.my_team = message["team"]
+
             other_id = message["other_id"]
             if other_id in self.players:
                 self.opponent_name = self.players[other_id].name
@@ -596,10 +676,8 @@ class ClientGame:
                 if current_player:
                     if self.my_team == 0:  # Host
                         self.current_match = Match(p1=current_player, p2=other_player, move=0, game=None)
-                        print(f"MATCH: Updated match as host with both players: {self.current_match}")
                     else:  # Joiner
                         self.current_match = Match(p1=other_player, p2=current_player, move=0, game=None)
-                        print(f"MATCH: Created match as joiner with both players: {self.current_match}")
 
                 # HIDE HTE LOBBY UI STUFF
                 self.create_match_button.hide()
@@ -614,33 +692,31 @@ class ClientGame:
             # recieved match config and start the game
             config_json = message.get("config", "{}")
             players = [self.players[self.opponent_id]] if self.opponent_id else []
-            print(f"Creating game with config: {config_json[:100]}...")
             self.game = Game.from_config(config_json, players)
-            print(f"Game created: {self.game}")
-            print(f"Game board: {self.game.board}")
 
-            # Store game in current match
             if self.current_match:
                 self.current_match.game = self.game
-                print(f"Match updated with game: {self.current_match}")
 
             self.game_state = "game"
-            print("Game started with config:", config_json[:100])
 
         elif mtype == "move":
             # opponent's move echoed back from server
             from_coord = message["from"]
             to_coord = message["to"]
 
+            print("got move back")
             if self.game:
-                self.game.move_piece(
+                print("MOVED PIECE")
+                applied = self.game.move_piece(
                     (from_coord[0], from_coord[1]),
-                    (to_coord[0], to_coord[1])
+                    (to_coord[0], to_coord[1]),
+                    validate=False,
                 )
-                # Update match move counter
+                if not applied:
+                    print("?")
+                print("thing")
                 if self.current_match:
                     self.current_match.move += 1
-                # Clear selection after opponent move
                 self.selected_tile = None
                 self.valid_moves = []
 
