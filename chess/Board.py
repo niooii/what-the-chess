@@ -33,9 +33,15 @@ class Board:
 
         # Check if current square is a piece or not
         # None in this case means it is NOT a piece
-        if not isinstance(self.get_piece(piece_pos), Piece):
+        if self.get_piece(piece_pos) is not Piece:
             return None
         piece: Piece = self.get_piece(piece_pos)
+        team: int = piece.team
+
+        flip_actions: bool = False
+
+        if team % 2 == 1:
+            flip_actions = True
 
         # Check for bounds
         if piece_pos[0] > self.size or piece_pos[1] > self.size:
@@ -45,6 +51,10 @@ class Board:
             # First compute take at initial pos
             tk_dir_vecs: list[tuple[int]] = rule_set.tk_func[piece.move_count]
             mv_dir_vecs: list[tuple[int]] = rule_set.mv_func[piece.move_count]
+
+            if flip_actions:
+                mv_dir_vecs = [(-x, -y) for (x, y) in mv_dir_vecs]
+                tk_dir_vecs = [(-x, -y) for (x, y) in tk_dir_vecs]
 
             # Extend moves to max range
             #TODO: FUTURE ME OPTIMIZE THIS BRO
@@ -76,28 +86,29 @@ class Board:
         return valid_actions
         
     def is_valid_take(self, curr_piece: Piece, pos: tuple[int]) -> bool:
-        # Check in bound
-        if pos[0] > self.size or pos[1] > self.size:
+        # Check in bounds
+        if not (0 <= pos[0] < self.size and 0 <= pos[1] < self.size):
             return False
-        
+    
         # Check for occupied square
-        if isinstance(self.get_piece(pos), None):
+        target_piece = self.get_piece(pos)
+        if target_piece is None:
             return False
-        target_piece: Piece = self.get_piece(pos)
 
         # Check team
         if curr_piece.team == target_piece.team:
             return False
-        
+    
         return True
 
+
     def is_valid_move(self, curr_piece: Piece, pos: tuple[int]) -> bool:
-        # Check in bound
-        if pos[0] > self.size or pos[1] > self.size:
+        # Check in bounds
+        if not (0 <= pos[0] < self.size and 0 <= pos[1] < self.size):
             return False
-        
+    
         # Check for non-occupied square
-        if isinstance(self.get_piece(pos), Piece):
+        if self.get_piece(pos) is not None:
             return False
 
         return True
