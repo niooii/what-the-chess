@@ -48,36 +48,32 @@ class Board:
 
             # Extend moves to max range
             #TODO: FUTURE ME OPTIMIZE THIS BRO
-            i: int = 1
-            while i < rule_set.max_range:
-                
-                # Take 
-                for dir_vec in tk_dir_vecs:
-                    if not dir_vec * i in valid_actions:
-                        valid_actions.append(dir_vec * i)
-                # Move
-                for dir_vec in mv_dir_vecs:
+
+            for dir_vec in tk_dir_vecs:
+                i: int = 1
+                while i < rule_set.max_range:
+                    take: tuple[int] = dir_vec * i
+
+                    # Check duplicate
+                    if take not in valid_actions and self.is_valid_take(take):
+                        valid_actions.append(take)
+
+                    i += 1  # increment inside each direction
+
+            for dir_vec in mv_dir_vecs:
+                i: int = 1
+                blocked: bool = False
+                while i < rule_set.max_range and not blocked:
                     move: tuple[int] = dir_vec * i
 
-                    # Check duplicates
-                    if move * i in valid_actions: 
-                        continue
-
-                    # Check valid move
-                    if not self.is_valid_move(move):
+                    if move not in valid_actions and self.is_valid_move(move):
+                        valid_actions.append(move)
+                    else:
                         if not rule_set.jump:
-                            break
-                        continue
+                            blocked = True  # stop extending in this direction
+                    i += 1
 
-                    dir_vec
-            
-
-        # Compute move
-
-        # Check for teams
-        
-
-        return []
+        return valid_actions
         
     def is_valid_take(self, curr_piece: Piece, pos: tuple[int]) -> bool:
         # Check in bound
