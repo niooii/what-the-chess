@@ -13,7 +13,7 @@ class ClientConnection:
 
     async def start(self) -> None:
         try:
-            self.reader, self.writer = await asyncio.open_connection("localhost", 25455)
+            self.reader, self.writer = await asyncio.open_connection("149.125.185.66", 9001)
             self.connected = True
             print("Connected to server")
         except Exception as e:
