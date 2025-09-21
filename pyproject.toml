@@ -8,4 +8,5 @@ dependencies = [
     "asyncio>=4.0.0",
     "google-genai>=1.38.0",
     "pygame>=2.6.1",
+    "pygame-gui>=0.6.14",
 ]
