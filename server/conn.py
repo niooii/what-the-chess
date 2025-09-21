@@ -72,11 +72,11 @@ class Server:
         
         self.gemini = genai.Client()
         self.gemini_prompt = """
-> Generate a fun and random chess variant.
+> Generate a fun and random chess variant, that takes place on an 8x8 chessboard.
 >
 > * Output must follow the `ChessGame` schema.
 > * Each ruleset is either **jumping** (knight-like) or **sliding** (bishop/rook/queen-like). Sliding rules respect `max_range`.
-> * `target_moves` and `target_takes` are Python functions mapping `move_num → List[Tuple[int,int]]`. For pawns, moves differ from takes; for most pieces they match.
+> * `target_moves` and `target_takes` are Python functions mapping `move_num → List[Tuple[int,int]]`. For pawns, moves differ from takes; for most pieces they match. usually, these will be the same (eg. bishop, rook, queen), but this will differ for pawns e.g. target_moves(1) -> [(0, 1), (0, 2)], target_moves(...) -> [(0,1)], target_takes(...) -> [(-1, 1), (1, 1)]. The direction vectors are relative to the side the player is on. These functions should be defined in working python code, with the name of the target_moves function in code being def mv_func(n: int)..., and target_takes being tk_func...
 > * Direction vectors are **relative to the player’s side**: each player sees their pieces starting at the bottom.
 > * `pieces` reference rulesets by index, and multiple movesets can be composed into one piece, including mixing jumping and sliding.
 > * `starting_pos` maps `(x,y)` → piece index. Only needs to be defined for a single side, as it will be mirrored on the other side.
@@ -123,6 +123,12 @@ class Server:
                 self, "playermod", exclude_self=False
             )
 
+        elif mtype == "move":
+            from_coord = packet["from"]
+            to_coord = packet["to"]
+
+
+
         elif mtype == "matchcreate":
             if player.match is not None:
                 return
@@ -157,18 +163,19 @@ class Server:
             await self.broadcast({"type": "matchremove", "host_id": player.player_state.id})
 
             await player.send({"type": "matchstart", "other_id": other.player_state.id})
-            await other.send({"type": "matchstart", "other_id": other.player_state.id})
+            await other.send({"type": "matchstart", "other_id": player.player_state.id})
 
-            response = self.gemini.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=self.gemini_prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": ChessConfig,
-                },
-            )
+            # response = self.gemini.models.generate_content(
+            #     model="gemini-2.5-flash",
+            #     contents=self.gemini_prompt,
+            #     config={
+            #         "response_mime_type": "application/json",
+            #         "response_schema": ChessConfig,
+            #     },
+            # )
 
-            config = response.text
+            # config = response.text
+            config = """{"rulesets": [{"jump": false, "target_moves": "def mv_func(n: int): return [(0, 1), (0, 2)] if n == 1 else [(0, 1)]", "target_takes": "def tk_func(n: int): return [(-1, 1), (1, 1)]", "max_range": 1}, {"jump": false, "target_moves": "def mv_func(n: int): return [(0, 1), (0, -1), (1, 0), (-1, 0)]", "target_takes": "def tk_func(n: int): return [(0, 1), (0, -1), (1, 0), (-1, 0)]", "max_range": 7}, {"jump": false, "target_moves": "def mv_func(n: int): return [(1, 1), (1, -1), (-1, 1), (-1, -1)]", "target_takes": "def tk_func(n: int): return [(1, 1), (1, -1), (-1, 1), (-1, -1)]", "max_range": 7}, {"jump": true, "target_moves": "def mv_func(n: int): return [(1, 2), (1, -2), (-1, 2), (-1, -2), (2, 1), (2, -1), (-2, 1), (-2, -1)]", "target_takes": "def tk_func(n: int): return [(1, 2), (1, -2), (-1, 2), (-1, -2), (2, 1), (2, -1), (-2, 1), (-2, -1)]", "max_range": 1}, {"jump": true, "target_moves": "def mv_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "target_takes": "def tk_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "max_range": 1}, {"jump": false, "target_moves": "def mv_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "target_takes": "def tk_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "max_range": 2}], "pieces": [{"name": "Spirit Scout", "desc": "A nimble, forward-moving piece that advances steadily, but can only capture diagonally.", "move_desc": "Moves one square forward, or two squares forward on its first move. Captures one square diagonally forward.", "rulesets": [0]}, {"name": "Glimmer Rook", "desc": "An ethereal piece moving in straight lines, leaving a shimmering trail.", "move_desc": "Moves any number of squares horizontally or vertically.", "rulesets": [1]}, {"name": "Shadow Bishop", "desc": "A cryptic piece darting across the diagonals, always staying on its chosen color.", "move_desc": "Moves any number of squares diagonally.", "rulesets": [2]}, {"name": "Stalker Knight", "desc": "A sneaky, unpredictable jumper, striking from unexpected angles.", "move_desc": "Jumps in an 'L' shape: two squares in one cardinal direction, then one square perpendicularly.", "rulesets": [3]}, {"name": "Phantom Queen", "desc": "The most powerful piece, combining the swiftness of the Glimmer Rook and the cunning of the Shadow Bishop.", "move_desc": "Moves any number of squares horizontally, vertically, or diagonally.", "rulesets": [1, 2]}, {"name": "King Sovereign", "desc": "The royal piece, whose safety is paramount. It moves slowly but deliberately.", "move_desc": "Moves one square in any direction (horizontally, vertically, or diagonally).", "rulesets": [4]}, {"name": "Mystic Charger", "desc": "A guardian with limited reach but surprising mobility, combining a short slide with a knight's jump.", "move_desc": "Moves up to two squares in any direction (horizontally, vertically, or diagonally), AND also jumps like a Stalker Knight.", "rulesets": [5, 3]}], "starting_pos": [{"x": 0, "y": 1, "piece": 0}, {"x": 1, "y": 1, "piece": 0}, {"x": 2, "y": 1, "piece": 0}, {"x": 3, "y": 1, "piece": 0}, {"x": 4, "y": 1, "piece": 0}, {"x": 5, "y": 1, "piece": 0}, {"x": 6, "y": 1, "piece": 0}, {"x": 7, "y": 1, "piece": 0}, {"x": 0, "y": 0, "piece": 1}, {"x": 7, "y": 0, "piece": 1}, {"x": 1, "y": 0, "piece": 6}, {"x": 6, "y": 0, "piece": 6}, {"x": 2, "y": 0, "piece": 2}, {"x": 5, "y": 0, "piece": 2}, {"x": 3, "y": 0, "piece": 4}, {"x": 4, "y": 0, "piece": 5}]}"""
             print(config)
 
             await player.send({"type": "matchconfig", "config": config})

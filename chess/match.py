@@ -10,4 +10,3 @@ class Match:
     p2: Optional[PlayerState] = None
     move: int = 0
     # TODO!
-    board: None = None
