@@ -25,6 +25,9 @@ COLORS = {
     "button_hover": (76, 86, 106),
 }
 
+IMAGESDICT = {"lavatile": pygame.image.load("resources/lava.png"),
+              "grasstile": pygame.image.load("resources/grass.png")}
+
 
 class ClientGame:
     def __init__(self, conn: ClientConnection):
@@ -50,7 +53,8 @@ class ClientGame:
         self.game_state = "lobby"  # lobby, vs_screen, game
         self.opponent_name = ""
         self.opponent_id = None
-        self.match_click_areas = {}
+        self.grid_size = 8  # configurable grid size
+        self.hovered_tile = None  # (x, y) tuple or None
 
         self.create_lobby_ui()
 
@@ -92,14 +96,16 @@ class ClientGame:
 
         # create match button (hidden initially)
         self.create_match_button = pygame_gui.elements.UIButton(
-            relative_rect=pygame.Rect(WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2 + 50, 200, 40),
+            relative_rect=pygame.Rect(
+                WINDOW_WIDTH // 2 - 100, WINDOW_HEIGHT // 2 + 50, 200, 40
+            ),
             text="Host Match",
             manager=self.ui_manager,
         )
         self.create_match_button.hide()
 
         # match list area
-        self.match_buttons = []
+        self.match_buttons = {}  # will store {host_id: button}
 
     def draw_title_and_decorations(self):
         font_large = pygame.font.Font(None, 72)
@@ -163,6 +169,12 @@ class ClientGame:
                     asyncio.create_task(self.send_player_name())
             elif event.ui_element == self.create_match_button:
                 asyncio.create_task(self.create_match())
+            else:
+                # check if it's a match button
+                for host_id, button in self.match_buttons.items():
+                    if event.ui_element == button:
+                        asyncio.create_task(self.join_match(host_id))
+                        break
 
         elif event.type == pygame_gui.UI_TEXT_ENTRY_FINISHED:
             if event.ui_element == self.name_input:
@@ -171,12 +183,46 @@ class ClientGame:
                     asyncio.create_task(self.send_player_name())
 
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if self.game_state == "lobby" and hasattr(self, 'match_click_areas'):
+            mouse_pos = pygame.mouse.get_pos()
+
+            if self.game_state == "game" and hasattr(self, "board_x"):
+                # check if click is within the board
+                if (
+                    self.board_x <= mouse_pos[0] <= self.board_x + self.board_size
+                    and self.board_y <= mouse_pos[1] <= self.board_y + self.board_size
+                ):
+
+                    # calculate which tile was clicked
+                    col = (mouse_pos[0] - self.board_x) // self.square_size
+                    row = (mouse_pos[1] - self.board_y) // self.square_size
+
+                    # ensure coordinates are within bounds
+                    if 0 <= col < self.grid_size and 0 <= row < self.grid_size:
+                        print(f"Clicked tile: x={col}, y={row}")
+
+        elif event.type == pygame.MOUSEMOTION:
+            if self.game_state == "game" and hasattr(self, "board_x"):
                 mouse_pos = pygame.mouse.get_pos()
-                for host_id, rect in self.match_click_areas.items():
-                    if rect.collidepoint(mouse_pos):
-                        asyncio.create_task(self.join_match(host_id))
-                        break
+
+                # check if mouse is within the board
+                if (
+                    self.board_x <= mouse_pos[0] <= self.board_x + self.board_size
+                    and self.board_y <= mouse_pos[1] <= self.board_y + self.board_size
+                ):
+
+                    # calculate which tile is being hovered
+                    col = (mouse_pos[0] - self.board_x) // self.square_size
+                    row = (mouse_pos[1] - self.board_y) // self.square_size
+
+                    # ensure coordinates are within bounds
+                    if 0 <= col < self.grid_size and 0 <= row < self.grid_size:
+                        self.hovered_tile = (col, row)
+                    else:
+                        self.hovered_tile = None
+                else:
+                    self.hovered_tile = None
+            else:
+                self.hovered_tile = None
 
     async def create_match(self):
         await self.conn.send({"type": "matchcreate"})
@@ -205,63 +251,94 @@ class ClientGame:
         player_count = len(self.players)
         self.player_count_label.set_text(f"Players online: {player_count}")
 
-    def draw_available_matches(self):
+    def update_match_buttons(self):
         if not self.connected or self.game_state != "lobby":
             return
 
-        font = pygame.font.Font(None, 24)
+        # remove buttons for matches that no longer exist
+        to_remove = []
+        for host_id, button in self.match_buttons.items():
+            if host_id not in self.available_matches:
+                button.kill()
+                to_remove.append(host_id)
+        for host_id in to_remove:
+            del self.match_buttons[host_id]
+
+        # create buttons for new matches
         y_offset = WINDOW_HEIGHT // 2 + 100
-
         for i, (host_id, host_name) in enumerate(self.available_matches.items()):
-            match_text = f"{host_name} awaiting opponent"
-            color = COLORS["accent_light"] if i % 2 == 0 else COLORS["text_muted"]
-            text_surface = font.render(match_text, True, color)
-            text_rect = text_surface.get_rect(
-                center=(WINDOW_WIDTH // 2, y_offset + i * 30)
-            )
-            self.screen.blit(text_surface, text_rect)
-
-            # TODO! make them BUTTONS BRO what am i doing
-            if not hasattr(self, 'match_click_areas'):
-                self.match_click_areas = {}
-            self.match_click_areas[host_id] = text_rect
+            if host_id not in self.match_buttons:
+                button_rect = pygame.Rect(
+                    WINDOW_WIDTH // 2 - 150, y_offset + i * 50, 300, 40
+                )
+                button = pygame_gui.elements.UIButton(
+                    relative_rect=button_rect,
+                    text=f"Join {host_name}",
+                    manager=self.ui_manager,
+                )
+                self.match_buttons[host_id] = button
 
     # the loading screen p much
     def draw_vs_screen(self):
         font_large = pygame.font.Font(None, 72)
         vs_text = f"{self.player_name} VS {self.opponent_name}"
         text_surface = font_large.render(vs_text, True, COLORS["text"])
-        text_rect = text_surface.get_rect(center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2))
+        text_rect = text_surface.get_rect(
+            center=(WINDOW_WIDTH // 2, WINDOW_HEIGHT // 2)
+        )
         self.screen.blit(text_surface, text_rect)
 
     def draw_chess_board(self):
         board_size = 600
         board_x = (WINDOW_WIDTH - board_size) // 2
         board_y = (WINDOW_HEIGHT - board_size) // 2
-        square_size = board_size // 8
+        square_size = board_size // self.grid_size
+
+        # store board position for click detection
+        self.board_x = board_x
+        self.board_y = board_y
+        self.board_size = board_size
+        self.square_size = square_size
 
         # draw checkerboard
-        for row in range(8):
-            for col in range(8):
+        for row in range(self.grid_size):
+            for col in range(self.grid_size):
                 color = COLORS["bg_light"] if (row + col) % 2 == 0 else COLORS["accent"]
                 square_rect = pygame.Rect(
                     board_x + col * square_size,
                     board_y + row * square_size,
                     square_size,
-                    square_size
+                    square_size,
                 )
                 pygame.draw.rect(self.screen, color, square_rect)
 
+        # draw hover outline
+        if self.hovered_tile:
+            hover_col, hover_row = self.hovered_tile
+            hover_rect = pygame.Rect(
+                board_x + hover_col * square_size,
+                board_y + hover_row * square_size,
+                square_size,
+                square_size,
+            )
+            pygame.draw.rect(self.screen, COLORS["text"], hover_rect, 2)
+
         # draw border
-        pygame.draw.rect(self.screen, COLORS["text"],
-                        pygame.Rect(board_x - 2, board_y - 2, board_size + 4, board_size + 4), 2)
+        pygame.draw.rect(
+            self.screen,
+            COLORS["text"],
+            pygame.Rect(board_x - 2, board_y - 2, board_size + 4, board_size + 4),
+            2,
+        )
 
         # player names
         font = pygame.font.Font(None, 36)
 
         # you at bottom right
         you_text = font.render("YOU", True, COLORS["accent_light"])
-        you_rect = you_text.get_rect(bottomright=(board_x + board_size + 120, board_y + board_size + 40))
+        you_rect = you_text.get_rect(
+            bottomright=(board_x + board_size + 120, board_y + board_size + 40)
+        )
         self.screen.blit(you_text, you_rect)
 
         # opponent name (top left)
@@ -275,7 +352,7 @@ class ClientGame:
 
         if self.game_state == "lobby":
             self.draw_title_and_decorations()
-            self.draw_available_matches()
+            self.update_match_buttons()
         elif self.game_state == "vs_screen":
             self.draw_vs_screen()
         elif self.game_state == "game":
@@ -366,6 +443,10 @@ class ClientGame:
                 # HIDE HTE LOBBY UI STUFF
                 self.create_match_button.hide()
 
+                # hide all match buttons
+                for button in self.match_buttons.values():
+                    button.hide()
+
                 asyncio.create_task(self.vs_screen_timer())
 
         elif mtype == "matchconfig":
@@ -384,7 +465,6 @@ class ClientGame:
         await asyncio.sleep(2)
         if self.game_state == "vs_screen":
             pass
-
 
     async def run(self):
         await asyncio.gather(self.conn.listen(self.handle_packet), self.game_loop())

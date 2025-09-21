@@ -1,14 +1,42 @@
 import asyncio
 import json
+import os
 import time
 from dataclasses import asdict
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
+
+from dotenv import load_dotenv
+from google import genai
+from pydantic import BaseModel, Field
 
 from chess.match import Match
 from chess.player import PlayerState
 
 from .lobby import Lobby
 
+load_dotenv()
+
+# structured schema for gemini
+class Ruleset(BaseModel):
+    jump: bool
+    target_moves: str
+    target_takes: str
+    max_range: int
+class Piece(BaseModel):
+    name: str
+    desc: str
+    move_desc: str
+    rulesets: List[int]
+
+class StartPos(BaseModel):
+    x: int
+    y: int
+    piece: int  # index into pieces
+
+class ChessConfig(BaseModel):
+    rulesets: List[Ruleset]
+    pieces: List[Piece]
+    starting_pos: List[StartPos]
 
 # Connection for a signle player
 class PlayerConnection:
@@ -41,6 +69,20 @@ class Server:
         # TODO! use match uid instead of player id key, this uses playerid key rn
         self.matches: Dict[int, Match] = {}
         self.id = 0
+        
+        self.gemini = genai.Client()
+        self.gemini_prompt = """
+> Generate a fun and random chess variant.
+>
+> * Output must follow the `ChessGame` schema.
+> * Each ruleset is either **jumping** (knight-like) or **sliding** (bishop/rook/queen-like). Sliding rules respect `max_range`.
+> * `target_moves` and `target_takes` are Python functions mapping `move_num → List[Tuple[int,int]]`. For pawns, moves differ from takes; for most pieces they match.
+> * Direction vectors are **relative to the player’s side**: each player sees their pieces starting at the bottom.
+> * `pieces` reference rulesets by index, and multiple movesets can be composed into one piece, including mixing jumping and sliding.
+> * `starting_pos` maps `(x,y)` → piece index. Only needs to be defined for a single side, as it will be mirrored on the other side.
+> * ``
+> Be creative with names, descriptions, and moves."""
+
 
     async def start(self):
         server = await asyncio.start_server(self.handle_client, "localhost", 25455)
@@ -117,13 +159,20 @@ class Server:
             await player.send({"type": "matchstart", "other_id": other.player_state.id})
             await other.send({"type": "matchstart", "other_id": other.player_state.id})
 
-            # TODO! generate gemini prompt here
-            config = {"example": "test"}
+            response = self.gemini.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=self.gemini_prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": ChessConfig,
+                },
+            )
+
+            config = response.text
+            print(config)
 
             await player.send({"type": "matchconfig", "config": config})
             await other.send({"type": "matchconfig", "config": config})
-
-
 
 
     async def handle_client(
