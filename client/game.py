@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 import pygame
 import pygame_gui
 
+from chess.Game import Game
+from chess.match import Match
 from chess.player import PlayerState
 from client.conn import ClientConnection
 
@@ -55,6 +57,11 @@ class ClientGame:
         self.opponent_id = None
         self.grid_size = 8  # configurable grid size
         self.hovered_tile = None  # (x, y) tuple or None
+        self.selected_tile = None  # (x, y) tuple or None for piece selection
+        self.valid_moves = []  # list of valid moves for selected piece
+        self.game: Optional[Game] = None
+        self.current_match: Optional[Match] = None
+        self.my_team = 0  # 0 for white (host), 1 for black (joiner)
 
         self.create_lobby_ui()
 
@@ -113,7 +120,7 @@ class ClientGame:
 
         # slightly animated title with pulse
         pulse_scale = 1 + math.sin(self.title_pulse) * 0.02
-        title_text = font_large.render("CHESS", True, COLORS["text"])
+        title_text = font_large.render("Dimensia CHESS", True, COLORS["text"])
         title_rect = title_text.get_rect()
 
         # scale the title
@@ -130,7 +137,7 @@ class ClientGame:
         if self.connected:
             subtitle_text = f"Connected as {self.player_name}"
         else:
-            subtitle_text = "Funny chess game"
+            subtitle_text = "What're the rules again!??!?!?!??!"
 
         subtitle = font_medium.render(subtitle_text, True, COLORS["text_muted"])
         subtitle_rect = subtitle.get_rect(
@@ -194,11 +201,78 @@ class ClientGame:
 
                     # calculate which tile was clicked
                     col = (mouse_pos[0] - self.board_x) // self.square_size
-                    row = (mouse_pos[1] - self.board_y) // self.square_size
+                    display_row = (mouse_pos[1] - self.board_y) // self.square_size
 
                     # ensure coordinates are within bounds
-                    if 0 <= col < self.grid_size and 0 <= row < self.grid_size:
-                        print(f"Clicked tile: x={col}, y={row}")
+                    if 0 <= col < self.grid_size and 0 <= display_row < self.grid_size:
+                        print("BRANCH 1: Within bounds")
+                        # Convert display row back to logical board row
+                        logical_row = self.grid_size - 1 - display_row
+                        clicked_pos = (logical_row, col)
+                        print(f"BRANCH 2: Clicked at logical_row={logical_row}, col={col}, pos={clicked_pos}")
+
+                        if self.game is None:
+                            print("BRANCH 3: Game is None!")
+                            return
+
+                        print("BRANCH 4: Game exists, getting piece")
+                        piece = self.game.board.get_piece(clicked_pos)
+                        print(f"BRANCH 5: Piece at {clicked_pos}: {piece}")
+
+                        if self.selected_tile is None:
+                            print("BRANCH 6: No piece currently selected")
+                            # No piece selected, try to select this tile
+                            if piece is not None:
+                                print(f"BRANCH 7: Found piece: {piece.name}, team: {piece.team}")
+                                # Only select our own pieces
+                                if piece.team == self.my_team:
+                                    print(f"BRANCH 8: OUR PIECE! Selecting piece at {clicked_pos}")
+                                    self.selected_tile = clicked_pos
+                                    self.valid_moves = self.game.board.get_valid_actions(clicked_pos) or []
+                                    print(f"BRANCH 9: Selected tile set to: {self.selected_tile}")
+                                    print(f"BRANCH 10: Valid moves: {self.valid_moves}")
+                                else:
+                                    print(f"BRANCH 11: Enemy piece, team {piece.team}, not our team {self.my_team}")
+                            else:
+                                print("BRANCH 12: No piece at clicked position")
+                        else:
+                            print(f"BRANCH 13: Piece already selected: {self.selected_tile}")
+                            # Piece is selected
+                            if clicked_pos in self.valid_moves:
+                                print("BRANCH 14: Valid move - applying locally then sending to server")
+                                # Apply move locally first
+                                success = self.game.move_piece(self.selected_tile, clicked_pos)
+                                if success:
+                                    # Update match move counter
+                                    if self.current_match:
+                                        self.current_match.move += 1
+                                    # Send to server
+                                    asyncio.create_task(self.send_move(self.selected_tile, clicked_pos))
+                                self.selected_tile = None
+                                self.valid_moves = []
+                            else:
+                                print("BRANCH 15: Not a valid move, checking other options")
+                                # Check if clicking on another piece to select
+                                if self.game and self.game.board.get_piece(clicked_pos):
+                                    print("BRANCH 16: Clicking on another piece")
+                                    piece = self.game.board.get_piece(clicked_pos)
+                                    if piece.team == self.my_team:
+                                        print("BRANCH 17: Selecting new piece")
+                                        # Select new piece
+                                        self.selected_tile = clicked_pos
+                                        self.valid_moves = self.game.board.get_valid_actions(clicked_pos) or []
+                                    else:
+                                        print("BRANCH 18: Enemy piece - deselecting")
+                                        # Deselect
+                                        self.selected_tile = None
+                                        self.valid_moves = []
+                                else:
+                                    print("BRANCH 19: Empty square - deselecting")
+                                    # Empty square - deselect
+                                    self.selected_tile = None
+                                    self.valid_moves = []
+                    else:
+                        print("BRANCH 20: Click outside bounds")
 
         elif event.type == pygame.MOUSEMOTION:
             if self.game_state == "game" and hasattr(self, "board_x"):
@@ -212,11 +286,13 @@ class ClientGame:
 
                     # calculate which tile is being hovered
                     col = (mouse_pos[0] - self.board_x) // self.square_size
-                    row = (mouse_pos[1] - self.board_y) // self.square_size
+                    display_row = (mouse_pos[1] - self.board_y) // self.square_size
 
                     # ensure coordinates are within bounds
-                    if 0 <= col < self.grid_size and 0 <= row < self.grid_size:
-                        self.hovered_tile = (col, row)
+                    if 0 <= col < self.grid_size and 0 <= display_row < self.grid_size:
+                        # Convert display row back to logical board row
+                        logical_row = self.grid_size - 1 - display_row
+                        self.hovered_tile = (col, logical_row)
                     else:
                         self.hovered_tile = None
                 else:
@@ -225,10 +301,30 @@ class ClientGame:
                 self.hovered_tile = None
 
     async def create_match(self):
+        self.my_team = 0  # Host is white (team 0)
+        print(f"TEAM: Set my_team to {self.my_team} (host)")
+        # Create local match with self as p1
+        current_player = None
+        for player in self.players.values():
+            if player.name == self.player_name:
+                current_player = player
+                break
+        if current_player:
+            self.current_match = Match(p1=current_player, p2=None, move=0, game=None)
+            print(f"MATCH: Created match as host: {self.current_match}")
         await self.conn.send({"type": "matchcreate"})
 
     async def join_match(self, host_id):
+        self.my_team = 1  # Joiner is black (team 1)
+        print(f"TEAM: Set my_team to {self.my_team} (joiner)")
         await self.conn.send({"type": "matchjoin", "player_id": host_id})
+
+    async def send_move(self, from_pos, to_pos):
+        await self.conn.send({
+            "type": "move",
+            "from": [from_pos[0], from_pos[1]],
+            "to": [to_pos[0], to_pos[1]]
+        })
 
     async def send_player_name(self):
         if not self.player_name.strip():
@@ -300,28 +396,77 @@ class ClientGame:
         self.board_size = board_size
         self.square_size = square_size
 
-        # draw checkerboard
+        # draw checkerboard (flipped so row 0 at bottom)
         for row in range(self.grid_size):
             for col in range(self.grid_size):
                 color = COLORS["bg_light"] if (row + col) % 2 == 0 else COLORS["accent"]
+                display_row = self.grid_size - 1 - row  # flip vertically
                 square_rect = pygame.Rect(
                     board_x + col * square_size,
-                    board_y + row * square_size,
+                    board_y + display_row * square_size,
                     square_size,
                     square_size,
                 )
                 pygame.draw.rect(self.screen, color, square_rect)
 
+        # draw valid move highlights (red squares)
+        for move_pos in self.valid_moves:
+            move_row, move_col = move_pos
+            display_row = self.grid_size - 1 - move_row  # flip vertically
+            move_rect = pygame.Rect(
+                board_x + move_col * square_size,
+                board_y + display_row * square_size,
+                square_size,
+                square_size,
+            )
+            pygame.draw.rect(self.screen, (255, 100, 100), move_rect, 3)
+
+        # draw selection outline (selected piece border)
+        if self.selected_tile:
+            selected_row, selected_col = self.selected_tile
+            display_row = self.grid_size - 1 - selected_row  # flip vertically
+            selected_rect = pygame.Rect(
+                board_x + selected_col * square_size,
+                board_y + display_row * square_size,
+                square_size,
+                square_size,
+            )
+            pygame.draw.rect(self.screen, COLORS["accent"], selected_rect, 3)
+
         # draw hover outline
         if self.hovered_tile:
             hover_col, hover_row = self.hovered_tile
+            display_row = self.grid_size - 1 - hover_row  # flip vertically
             hover_rect = pygame.Rect(
                 board_x + hover_col * square_size,
-                board_y + hover_row * square_size,
+                board_y + display_row * square_size,
                 square_size,
                 square_size,
             )
             pygame.draw.rect(self.screen, COLORS["text"], hover_rect, 2)
+
+        # draw pieces
+        if self.game and self.game.board:
+            piece_font = pygame.font.Font(None, 24)
+            piece_count = 0
+            for row in range(self.grid_size):
+                for col in range(self.grid_size):
+                    piece = self.game.board.get_piece((row, col))
+                    if piece is not None:
+                        piece_count += 1
+                        piece_text = piece.name[:4].upper()
+                        color = COLORS["accent_light"] if piece.team == 0 else COLORS["text_muted"]
+                        text_surface = piece_font.render(piece_text, True, color)
+                        display_row = self.grid_size - 1 - row  # flip vertically
+                        text_rect = text_surface.get_rect(
+                            center=(
+                                board_x + col * square_size + square_size // 2,
+                                board_y + display_row * square_size + square_size // 2
+                            )
+                        )
+                        self.screen.blit(text_surface, text_rect)
+            if piece_count == 0:
+                print("No pieces found on board!")
 
         # draw border
         pygame.draw.rect(
@@ -440,6 +585,22 @@ class ClientGame:
                 self.opponent_id = other_id
                 self.game_state = "vs_screen"
 
+                # Update current match with both players
+                current_player = None
+                other_player = self.players[other_id]
+                for player in self.players.values():
+                    if player.name == self.player_name:
+                        current_player = player
+                        break
+
+                if current_player:
+                    if self.my_team == 0:  # Host
+                        self.current_match = Match(p1=current_player, p2=other_player, move=0, game=None)
+                        print(f"MATCH: Updated match as host with both players: {self.current_match}")
+                    else:  # Joiner
+                        self.current_match = Match(p1=other_player, p2=current_player, move=0, game=None)
+                        print(f"MATCH: Created match as joiner with both players: {self.current_match}")
+
                 # HIDE HTE LOBBY UI STUFF
                 self.create_match_button.hide()
 
@@ -451,8 +612,37 @@ class ClientGame:
 
         elif mtype == "matchconfig":
             # recieved match config and start the game
+            config_json = message.get("config", "{}")
+            players = [self.players[self.opponent_id]] if self.opponent_id else []
+            print(f"Creating game with config: {config_json[:100]}...")
+            self.game = Game.from_config(config_json, players)
+            print(f"Game created: {self.game}")
+            print(f"Game board: {self.game.board}")
+
+            # Store game in current match
+            if self.current_match:
+                self.current_match.game = self.game
+                print(f"Match updated with game: {self.current_match}")
+
             self.game_state = "game"
-            print("Game started with config:", message.get("config", {}))
+            print("Game started with config:", config_json[:100])
+
+        elif mtype == "move":
+            # opponent's move echoed back from server
+            from_coord = message["from"]
+            to_coord = message["to"]
+
+            if self.game:
+                self.game.move_piece(
+                    (from_coord[0], from_coord[1]),
+                    (to_coord[0], to_coord[1])
+                )
+                # Update match move counter
+                if self.current_match:
+                    self.current_match.move += 1
+                # Clear selection after opponent move
+                self.selected_tile = None
+                self.valid_moves = []
 
         elif mtype == "error":
             # random server errors

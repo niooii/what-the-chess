@@ -127,6 +127,27 @@ class Server:
             from_coord = packet["from"]
             to_coord = packet["to"]
 
+            if player.match and player.match.game:
+                success = player.match.game.move_piece(
+                    (from_coord[0], from_coord[1]),
+                    (to_coord[0], to_coord[1])
+                )
+
+                if success:
+                    # Find the other player in the match and echo the move
+                    other_player = None
+                    if player.match.p1 and player.match.p1.id != player.player_state.id:
+                        other_player = self.id_to_conn.get(player.match.p1.id)
+                    elif player.match.p2 and player.match.p2.id != player.player_state.id:
+                        other_player = self.id_to_conn.get(player.match.p2.id)
+
+                    if other_player:
+                        await other_player.send({
+                            "type": "move",
+                            "from": from_coord,
+                            "to": to_coord
+                        })
+
 
 
         elif mtype == "matchcreate":
@@ -177,6 +198,11 @@ class Server:
             # config = response.text
             config = """{"rulesets": [{"jump": false, "target_moves": "def mv_func(n: int): return [(0, 1), (0, 2)] if n == 1 else [(0, 1)]", "target_takes": "def tk_func(n: int): return [(-1, 1), (1, 1)]", "max_range": 1}, {"jump": false, "target_moves": "def mv_func(n: int): return [(0, 1), (0, -1), (1, 0), (-1, 0)]", "target_takes": "def tk_func(n: int): return [(0, 1), (0, -1), (1, 0), (-1, 0)]", "max_range": 7}, {"jump": false, "target_moves": "def mv_func(n: int): return [(1, 1), (1, -1), (-1, 1), (-1, -1)]", "target_takes": "def tk_func(n: int): return [(1, 1), (1, -1), (-1, 1), (-1, -1)]", "max_range": 7}, {"jump": true, "target_moves": "def mv_func(n: int): return [(1, 2), (1, -2), (-1, 2), (-1, -2), (2, 1), (2, -1), (-2, 1), (-2, -1)]", "target_takes": "def tk_func(n: int): return [(1, 2), (1, -2), (-1, 2), (-1, -2), (2, 1), (2, -1), (-2, 1), (-2, -1)]", "max_range": 1}, {"jump": true, "target_moves": "def mv_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "target_takes": "def tk_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "max_range": 1}, {"jump": false, "target_moves": "def mv_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "target_takes": "def tk_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "max_range": 2}], "pieces": [{"name": "Spirit Scout", "desc": "A nimble, forward-moving piece that advances steadily, but can only capture diagonally.", "move_desc": "Moves one square forward, or two squares forward on its first move. Captures one square diagonally forward.", "rulesets": [0]}, {"name": "Glimmer Rook", "desc": "An ethereal piece moving in straight lines, leaving a shimmering trail.", "move_desc": "Moves any number of squares horizontally or vertically.", "rulesets": [1]}, {"name": "Shadow Bishop", "desc": "A cryptic piece darting across the diagonals, always staying on its chosen color.", "move_desc": "Moves any number of squares diagonally.", "rulesets": [2]}, {"name": "Stalker Knight", "desc": "A sneaky, unpredictable jumper, striking from unexpected angles.", "move_desc": "Jumps in an 'L' shape: two squares in one cardinal direction, then one square perpendicularly.", "rulesets": [3]}, {"name": "Phantom Queen", "desc": "The most powerful piece, combining the swiftness of the Glimmer Rook and the cunning of the Shadow Bishop.", "move_desc": "Moves any number of squares horizontally, vertically, or diagonally.", "rulesets": [1, 2]}, {"name": "King Sovereign", "desc": "The royal piece, whose safety is paramount. It moves slowly but deliberately.", "move_desc": "Moves one square in any direction (horizontally, vertically, or diagonally).", "rulesets": [4]}, {"name": "Mystic Charger", "desc": "A guardian with limited reach but surprising mobility, combining a short slide with a knight's jump.", "move_desc": "Moves up to two squares in any direction (horizontally, vertically, or diagonally), AND also jumps like a Stalker Knight.", "rulesets": [5, 3]}], "starting_pos": [{"x": 0, "y": 1, "piece": 0}, {"x": 1, "y": 1, "piece": 0}, {"x": 2, "y": 1, "piece": 0}, {"x": 3, "y": 1, "piece": 0}, {"x": 4, "y": 1, "piece": 0}, {"x": 5, "y": 1, "piece": 0}, {"x": 6, "y": 1, "piece": 0}, {"x": 7, "y": 1, "piece": 0}, {"x": 0, "y": 0, "piece": 1}, {"x": 7, "y": 0, "piece": 1}, {"x": 1, "y": 0, "piece": 6}, {"x": 6, "y": 0, "piece": 6}, {"x": 2, "y": 0, "piece": 2}, {"x": 5, "y": 0, "piece": 2}, {"x": 3, "y": 0, "piece": 4}, {"x": 4, "y": 0, "piece": 5}]}"""
             print(config)
+
+            # Initialize the shared Game object in the match
+            if other.match:
+                from chess.Game import Game
+                other.match.game = Game.from_config(config, [player.player_state, other.player_state])
 
             await player.send({"type": "matchconfig", "config": config})
             await other.send({"type": "matchconfig", "config": config})
