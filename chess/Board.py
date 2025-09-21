@@ -21,8 +21,11 @@ class Board:
             return False
 
         self.board[row][col] = piece
+        return True
     
-    # def move_piece(self, row: int, col: int) -> bool:
+    def move_piece(self, row: int, col: int) -> bool:
+
+        return True
 
     '''
     Game logic
@@ -33,7 +36,7 @@ class Board:
 
         # Check if current square is a piece or not
         # None in this case means it is NOT a piece
-        if self.get_piece(piece_pos) is not Piece:
+        if self.get_piece(piece_pos) is None:
             return None
         piece: Piece = self.get_piece(piece_pos)
         team: int = piece.team
@@ -44,8 +47,8 @@ class Board:
             flip_actions = True
 
         # Check for bounds
-        if piece_pos[0] > self.size or piece_pos[1] > self.size:
-            return None
+        if not (0 <= piece_pos[0] < self.size and 0 <= piece_pos[1] < self.size):
+            return False
 
         for rule_set in piece.rule_sets:
             # First compute take at initial pos
@@ -62,10 +65,10 @@ class Board:
             for dir_vec in tk_dir_vecs:
                 i: int = 1
                 while i < rule_set.max_range:
-                    take: tuple[int] = dir_vec * i
+                    take: tuple[int] = self.add_vec(self.scale_vec(dir_vec, (i,i)), piece_pos)
 
                     # Check duplicate
-                    if take not in valid_actions and self.is_valid_take(take):
+                    if take not in valid_actions and self.is_valid_take(piece, take):
                         valid_actions.append(take)
 
                     i += 1  # increment inside each direction
@@ -74,9 +77,9 @@ class Board:
                 i: int = 1
                 blocked: bool = False
                 while i < rule_set.max_range and not blocked:
-                    move: tuple[int] = dir_vec * i
+                    move: tuple[int] = self.add_vec(self.scale_vec(dir_vec, (i,i)), piece_pos)
 
-                    if move not in valid_actions and self.is_valid_move(move):
+                    if move not in valid_actions and self.is_valid_move(piece, move):
                         valid_actions.append(move)
                     else:
                         if not rule_set.jump:
@@ -112,3 +115,13 @@ class Board:
             return False
 
         return True
+    
+    '''
+    Helper Functions
+    '''
+
+    def add_vec(a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
+        return (a[0] + b[0], a[1] + b[1])
+
+    def scale_vec(v: tuple[int, int], k: int) -> tuple[int, int]:
+        return (v[0] * k, v[1] * k)
