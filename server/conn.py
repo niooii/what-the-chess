@@ -32,13 +32,16 @@ class PlayerConnection:
             print(f"Failed to send to client: {e}")
 
     async def process_packet(self, packet: Dict[str, Any]) -> None:
+        print(packet)
         if self.player_state.name is None:
             # only accept a name packet
             if packet["type"] == "name":
                 self.player_state.name = packet["name"]
                 self.player_state.id = self.server.id
                 print(f"Registered new player {packet["name"]}")
-                await self.player_state.replicate(self.server, "playerjoin")
+                await self.player_state.replicate(
+                    self.server, "playerjoin", exclude_self=False
+                )
             return
         print(f"Processing packet for {self.player_state.name}: {packet}")
 

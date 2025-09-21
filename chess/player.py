@@ -10,6 +10,9 @@ class PlayerState:
     ready: bool = False
     connected_at: float = 0.0
 
-    async def replicate(self, server, event_type: str):
-        await server.broadcast({"type": event_type, "player": asdict(self)}, self.id)
+    async def replicate(self, server, event_type: str, exclude_self: bool = True):
+        await server.broadcast(
+            {"type": event_type, "player": asdict(self)},
+            self.id if exclude_self else None,
+        )
 
