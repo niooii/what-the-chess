@@ -1,45 +1,31 @@
 from typing import Optional
+from dataclasses import dataclass
 
+@dataclass
 class Ruleset:
-    value: int
+    def __init__(self, mv_func_str: str, tk_func_str: str):
+        ns = {}
+        
+        exec(mv_func_str, {}, ns)
+        exec(tk_func_str, {}, ns)
+
+        #TODO: MUS HAVE SRC FUNCTION BE NAMED "mv_func" and "tk_func" and "move_number"
+        self.mv_func = ns["mv_func"]
+        self.tk_func = ns["tk_func"]
+
     jump: bool
-    target_moves: Optional[str] = None   # function as string
-    target_takes: Optional[str] = None   # function as string
+    max_range: int
 
-    def compile_functions(self):
-        """Compile string functions into callables at runtime."""
-        if self.target_moves:
-            local_env = {}
-            exec(self.target_moves, {}, local_env)
-            self.target_moves = local_env["move_func"]
+    target_moves: list[tuple[int]]   # function as string
+    target_takes: list[tuple[int]]   # function as string
 
-        if self.target_takes:
-            local_env = {}
-            exec(self.target_takes, {}, local_env)
-            self.target_takes = local_env["take_func"]
-
-    def get_moves(self, position):
-        if callable(self.target_moves):
-            return self.target_moves(position)
-        return []
-
-    def get_takes(self, position):
-        if callable(self.target_takes):
-            return self.target_takes(position)
-        return []
-    
-class Ruleset_Test:
-    value: int
-    jump: bool
-    target_moves: tuple[int, int]
-    target_takes: tuple[int, int]
-
+@dataclass
 class Piece:
     name: str
     piece_desc: str
     move_desc: str
 
-    rule_sets: list[Ruleset_Test]
-    max_range: int
+    rule_sets: list[Ruleset]
+    value: int
     move_count: int
     team: int
