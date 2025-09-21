@@ -144,7 +144,7 @@ class ClientGame:
 
         # slightly animated title with pulse
         pulse_scale = 1 + math.sin(self.title_pulse) * 0.02
-        title_text = font_large.render("Dimensia CHESS", True, COLORS["text"])
+        title_text = font_large.render("WTC", True, COLORS["text"])
         title_rect = title_text.get_rect()
 
         # scale the title
@@ -161,7 +161,7 @@ class ClientGame:
         if self.connected:
             subtitle_text = f"Connected as {self.player_name}"
         else:
-            subtitle_text = "What're the rules again!??!?!?!??!"
+            subtitle_text = "What the chess!??!?!?!??!"
 
         subtitle = font_medium.render(subtitle_text, True, COLORS["text_muted"])
         subtitle_rect = subtitle.get_rect(
@@ -529,7 +529,7 @@ class ClientGame:
                         )
                         circle_color = self.get_team_color(piece.team)
                         circle_radius = max(square_size // 2 - 6, square_size // 3)
-                        pygame.draw.circle(self.screen, circle_color, center, circle_radius, 2)
+                        pygame.draw.circle(self.screen, circle_color, center, circle_radius, 5)
                         text_rect = text_surface.get_rect(
                             center=center
                         )
@@ -548,7 +548,9 @@ class ClientGame:
 
         # you at bottom right
         you_color = self.get_contrast_color(self.my_team)
-        you_text = font.render("YOU", True, you_color)
+        you_is_turn = self.is_my_turn()
+        you_text_color = (100, 200, 120) if you_is_turn else you_color
+        you_text = font.render("YOU", True, you_text_color)
         you_rect = you_text.get_rect(
             bottomright=(board_x + board_size + 120, board_y + board_size + 40)
         )
@@ -556,7 +558,9 @@ class ClientGame:
 
         # opponent name (top left)
         opp_color = self.get_contrast_color(1 - self.my_team)
-        opp_text = font.render(self.opponent_name, True, opp_color)
+        opp_is_turn = self.game and self.game.current_turn == (1 - self.my_team)
+        opp_text_color = (100, 200, 120) if opp_is_turn else opp_color
+        opp_text = font.render(self.opponent_name, True, opp_text_color)
         opp_rect = opp_text.get_rect(topleft=(board_x - 120, board_y - 40))
         self.screen.blit(opp_text, opp_rect)
 

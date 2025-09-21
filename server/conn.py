@@ -74,10 +74,10 @@ class Server:
         
         self.gemini = genai.Client()
         self.gemini_prompt = """
-> Generate a fun and random chess variant, that takes place on an 8x8 chessboard. The structure of pawns on the front rank does not need to be followed. Try to deviate from classical chess structure in favor of creativity, and do not include any classical chess pieces.
+> Generate a fun and random chess variant, that takes place on an 8x8 chessboard. The structure of pawns on the front rank does not need to be followed. You must deviate from classical chess structure in favor of creativity, and do not include any classical chess pieces.
 > * Output must follow the `ChessGame` schema.
 > * Each ruleset is either **jumping** (knight-like) or **sliding** (bishop/rook/queen-like). Sliding rules respect `max_range`.
-> * `target_moves` and `target_takes` are Python functions mapping `move_num → List[Tuple[int,int]]`. For pawns, moves differ from takes; for most pieces they match. usually, these will be the same (eg. bishop, rook, queen), but this will differ for pawns e.g. target_moves(1) -> [(0, 1), (0, 2)], target_moves(...) -> [(0,1)], target_takes(...) -> [(-1, 1), (1, 1)]. The direction vectors are relative to the side the player is on. These functions should be defined in working python code, with the name of the target_moves function in code being def mv_func(n: int)..., and target_takes being tk_func...
+> * `target_moves` and `target_takes` are Python functions mapping `move_num → List[Tuple[int,int]]`. For pawns, moves differ from takes; for most pieces they match. usually, these will be the same (eg. bishop, rook, queen), but this will differ for pawns e.g. target_moves(1) -> [(0, 1), (0, 2)], target_moves(...) -> [(0,1)], target_takes(...) -> [(-1, 1), (1, 1)]. The direction vectors are relative to the side the player is on. These functions should be defined in working python code, with the name of the target_moves function in code being def mv_func(n: int)..., and target_takes being tk_func... Incorporate unique mechanics based on the current move number of the piece, an example is an oscilating piece that moves on a different axis based on whether the num is even or odd, etc. The function must be on ONE LINE such that it does not encounter any parsing errors when loading, or contain explicit newline characters.
 > * Direction vectors are **relative to the player’s side**: each player sees their pieces starting at the bottom.
 > * `pieces` reference rulesets by index, and multiple movesets can be composed into one piece, including mixing jumping and sliding.
 > * `starting_pos` maps `(x,y)` → piece index. Only needs to be defined for a single side, as it will be mirrored on the other side.
@@ -194,17 +194,17 @@ class Server:
             await player.send({"type": "matchstart", "other_id": other.player_state.id, "team": 1})
             await other.send({"type": "matchstart", "other_id": player.player_state.id, "team": 0})
 
-            # response = self.gemini.models.generate_content(
-            #     model="gemini-2.5-flash",
-            #     contents=self.gemini_prompt,
-            #     config={
-            #         "response_mime_type": "application/json",
-            #         "response_schema": ChessConfig,
-            #     },
-            # )
+            response = self.gemini.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=self.gemini_prompt,
+                config={
+                    "response_mime_type": "application/json",
+                    "response_schema": ChessConfig,
+                },
+            )
 
-            # config = response.text
-            config = DEFAULT_CONFIG
+            config = response.text
+            # config = DEFAULT_CONFIG
             print(config)
 
             if other.match:

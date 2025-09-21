@@ -63,8 +63,8 @@ class Board:
 
         for rule_set in piece.rule_sets:
             # First compute take at initial pos
-            tk_dir_vecs_raw = rule_set.tk_func(piece.move_count)
-            mv_dir_vecs_raw = rule_set.mv_func(piece.move_count)
+            tk_dir_vecs_raw = rule_set.tk_func(piece.move_count + 1)
+            mv_dir_vecs_raw = rule_set.mv_func(piece.move_count + 1)
 
             tk_dir_vecs: list[tuple[int, int]] = self._normalise_vectors(tk_dir_vecs_raw)
             mv_dir_vecs: list[tuple[int, int]] = self._normalise_vectors(mv_dir_vecs_raw)
