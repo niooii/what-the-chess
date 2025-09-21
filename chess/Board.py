@@ -63,8 +63,11 @@ class Board:
 
         for rule_set in piece.rule_sets:
             # First compute take at initial pos
-            tk_dir_vecs: list[tuple[int, int]] = rule_set.tk_func(piece.move_count)
-            mv_dir_vecs: list[tuple[int, int]] = rule_set.mv_func(piece.move_count)
+            tk_dir_vecs_raw = rule_set.tk_func(piece.move_count)
+            mv_dir_vecs_raw = rule_set.mv_func(piece.move_count)
+
+            tk_dir_vecs: list[tuple[int, int]] = self._normalise_vectors(tk_dir_vecs_raw)
+            mv_dir_vecs: list[tuple[int, int]] = self._normalise_vectors(mv_dir_vecs_raw)
 
             if flip_actions:
                 mv_dir_vecs = [(-x, -y) for (x, y) in mv_dir_vecs]
@@ -86,10 +89,19 @@ class Board:
                         take: tuple[int, int] = self.add_vec(self.scale_vec(dir_vec, i), piece_pos)
                         if not (0 <= take[0] < self.size and 0 <= take[1] < self.size):
                             break  # Out of bounds
-                        if take not in valid_actions and self.is_valid_take(piece, take):
+
+                        target_piece = self.get_piece(take)
+                        if target_piece is None:
+                            i += 1
+                            continue
+
+                        if (
+                            take not in valid_actions
+                            and target_piece.team != piece.team
+                        ):
                             valid_actions.append(take)
-                            break  # Can't continue past a capture
-                        i += 1
+
+                        break  # Stop after encountering any piece
 
             for dir_vec in mv_dir_vecs:
                 if rule_set.jump:
@@ -144,6 +156,19 @@ class Board:
     '''
     Helper Functions
     '''
+
+    def _normalise_vectors(self, vectors: Optional[list[tuple[int, int]]]) -> list[tuple[int, int]]:
+        """Convert (x, y) offsets from configs into (row, col) board deltas."""
+        if not vectors:
+            return []
+
+        normalised: list[tuple[int, int]] = []
+        for vec in vectors:
+            if not isinstance(vec, (tuple, list)) or len(vec) != 2:
+                continue
+            x, y = int(vec[0]), int(vec[1])
+            normalised.append((y, x))
+        return normalised
 
     def add_vec(self, a: tuple[int, int], b: tuple[int, int]) -> tuple[int, int]:
         return (a[0] + b[0], a[1] + b[1])
