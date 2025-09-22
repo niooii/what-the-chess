@@ -6,18 +6,19 @@ from chess.player import PlayerState
 
 
 class ClientConnection:
-    def __init__(self) -> None:
+    def __init__(self, server_ip: str = "localhost") -> None:
+        self.server_ip = server_ip
         self.writer: Optional[asyncio.StreamWriter] = None
         self.reader: Optional[asyncio.StreamReader] = None
         self.connected: bool = False
 
     async def start(self) -> None:
         try:
-            self.reader, self.writer = await asyncio.open_connection("149.125.185.66", 9001)
+            self.reader, self.writer = await asyncio.open_connection(self.server_ip, 9090)
             self.connected = True
-            print("Connected to server")
+            print(f"Connected to server at {self.server_ip}")
         except Exception as e:
-            print(f"Error connecting: {e}")
+            print(f"Error connecting to {self.server_ip}: {e}")
             self.connected = False
 
     async def listen(

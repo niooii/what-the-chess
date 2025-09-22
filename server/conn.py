@@ -86,7 +86,7 @@ class Server:
 
 
     async def start(self):
-        server = await asyncio.start_server(self.handle_client, "0.0.0.0", 9001)
+        server = await asyncio.start_server(self.handle_client, "0.0.0.0", 9090)
         addr = server.sockets[0].getsockname()
         print(f"Server started on {addr[0]}:{addr[1]}")
 

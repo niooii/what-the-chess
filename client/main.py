@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 from typing import Any, Callable, Dict, List, Optional, Awaitable
 from chess.player import PlayerState
 from client.conn import ClientConnection
@@ -10,7 +11,8 @@ players: Dict[int, PlayerState] = {}
 
 
 async def main() -> None:
-    connection = ClientConnection()
+    server_ip = sys.argv[1] if len(sys.argv) > 1 else "localhost"
+    connection = ClientConnection(server_ip)
     await connection.start()
     game = ClientGame(connection)
     await game.run()
