@@ -25,6 +25,8 @@ COLORS = {
     "text_muted": (144, 152, 165),
     "input_bg": (67, 76, 94),
     "button_hover": (76, 86, 106),
+    "move_active": (255, 100, 100),
+    "move_passive": (128, 128, 138),
 }
 
 IMAGESDICT = {"lavatile": pygame.image.load("resources/lava.png"),
@@ -236,42 +238,34 @@ class ClientGame:
                             return
 
                         piece = self.game.board.get_piece(clicked_pos)
+                        selected_piece = (
+                            self.game.board.get_piece(self.selected_tile)
+                            if self.selected_tile is not None
+                            else None
+                        )
 
-                        if self.selected_tile is None:
-                            if piece is not None and piece.team == self.my_team:
-                                self.selected_tile = clicked_pos
-                                if self.is_my_turn():
-                                    self.valid_moves = self.game.board.get_valid_actions(clicked_pos) or []
-                                else:
-                                    self.valid_moves = []
-                            else:
-                                self.selected_tile = None
-                                self.valid_moves = []
+                        attempting_move = (
+                            self.selected_tile is not None
+                            and self.is_my_turn()
+                            and selected_piece is not None
+                            and selected_piece.team == self.my_team
+                            and clicked_pos in self.valid_moves
+                        )
+
+                        if attempting_move:
+                            success = self.game.move_piece(self.selected_tile, clicked_pos)
+                            if success:
+                                if self.current_match:
+                                    self.current_match.move += 1
+                                asyncio.create_task(self.send_move(self.selected_tile, clicked_pos))
+                            self.selected_tile = None
+                            self.valid_moves = []
+                        elif piece is not None:
+                            self.selected_tile = clicked_pos
+                            self.valid_moves = self.game.board.get_valid_actions(clicked_pos) or []
                         else:
-                            if self.is_my_turn():
-                                if clicked_pos in self.valid_moves:
-                                    success = self.game.move_piece(self.selected_tile, clicked_pos)
-                                    if success:
-                                        if self.current_match:
-                                            self.current_match.move += 1
-                                        asyncio.create_task(self.send_move(self.selected_tile, clicked_pos))
-                                    self.selected_tile = None
-                                    self.valid_moves = []
-                                else:
-                                    next_piece = self.game.board.get_piece(clicked_pos) if self.game else None
-                                    if next_piece and next_piece.team == self.my_team:
-                                        self.selected_tile = clicked_pos
-                                        self.valid_moves = self.game.board.get_valid_actions(clicked_pos) or []
-                                    else:
-                                        self.selected_tile = None
-                                        self.valid_moves = []
-                            else:
-                                next_piece = self.game.board.get_piece(clicked_pos) if self.game else None
-                                if next_piece and next_piece.team == self.my_team:
-                                    self.selected_tile = clicked_pos
-                                else:
-                                    self.selected_tile = None
-                                self.valid_moves = []
+                            self.selected_tile = None
+                            self.valid_moves = []
         elif event.type == pygame.MOUSEMOTION:
             if self.game_state == "game" and hasattr(self, "board_x"):
                 mouse_pos = pygame.mouse.get_pos()
@@ -474,8 +468,19 @@ class ClientGame:
                 )
                 pygame.draw.rect(self.screen, color, square_rect)
 
-        # draw valid move highlights (red squares)
-        if self.is_my_turn():
+        # draw valid move highlights (color depends on ownership/turn)
+        selected_piece = None
+        if self.selected_tile and self.game and self.game.board:
+            selected_piece = self.game.board.get_piece(self.selected_tile)
+
+        if selected_piece:
+            is_my_piece = selected_piece.team == self.my_team
+            move_color = (
+                COLORS["move_active"]
+                if is_my_piece and self.is_my_turn()
+                else COLORS["move_passive"]
+            )
+
             for move_row, move_col in self.valid_moves:
                 display_row, display_col = self.board_display_coords(move_row, move_col)
                 move_rect = pygame.Rect(
@@ -484,7 +489,7 @@ class ClientGame:
                     square_size,
                     square_size,
                 )
-                pygame.draw.rect(self.screen, (255, 100, 100), move_rect, 3)
+                pygame.draw.rect(self.screen, move_color, move_rect, 3)
 
         # draw selection outline (selected piece border)
         if self.selected_tile:
@@ -721,8 +726,15 @@ class ClientGame:
                 print("thing")
                 if self.current_match:
                     self.current_match.move += 1
-                self.selected_tile = None
-                self.valid_moves = []
+                if self.selected_tile is not None:
+                    selected_piece = self.game.board.get_piece(self.selected_tile)
+                    if selected_piece is None:
+                        self.selected_tile = None
+                        self.valid_moves = []
+                    else:
+                        self.valid_moves = self.game.board.get_valid_actions(self.selected_tile) or []
+                else:
+                    self.valid_moves = []
 
         elif mtype == "error":
             # random server errors

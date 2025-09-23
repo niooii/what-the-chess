@@ -1,4 +1,5 @@
 import json
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -90,6 +91,9 @@ class Board:
                         if not (0 <= take[0] < self.size and 0 <= take[1] < self.size):
                             break  # Out of bounds
 
+                        if not self._is_path_clear(piece_pos, take):
+                            break  # Another piece is in the way
+
                         target_piece = self.get_piece(take)
                         if target_piece is None:
                             i += 1
@@ -117,7 +121,9 @@ class Board:
                         move: tuple[int, int] = self.add_vec(self.scale_vec(dir_vec, i), piece_pos)
                         if not (0 <= move[0] < self.size and 0 <= move[1] < self.size):
                             break  # Out of bounds
-                        if move not in valid_actions and self.is_valid_move(piece, move):
+                        if not self._is_path_clear(piece_pos, move):
+                            blocked = True
+                        elif move not in valid_actions and self.is_valid_move(piece, move):
                             valid_actions.append(move)
                         else:
                             blocked = True  # stop extending in this direction
@@ -175,6 +181,27 @@ class Board:
 
     def scale_vec(self, v: tuple[int, int], k: int) -> tuple[int, int]:
         return (v[0] * k, v[1] * k)
+
+    def _is_path_clear(self, start: tuple[int, int], end: tuple[int, int]) -> bool:
+        """Ensure no pieces block a non-jumping move between start and end (exclusive)."""
+        delta_row = end[0] - start[0]
+        delta_col = end[1] - start[1]
+
+        steps = math.gcd(abs(delta_row), abs(delta_col))
+        if steps <= 1:
+            return True
+
+        step_row = delta_row // steps
+        step_col = delta_col // steps
+
+        current_row, current_col = start
+        for _ in range(steps - 1):
+            current_row += step_row
+            current_col += step_col
+            if self.get_piece((current_row, current_col)) is not None:
+                return False
+
+        return True
 
     @classmethod
     def from_config(cls, config_json: str) -> 'Board':

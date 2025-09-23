@@ -1,13 +1,12 @@
 import asyncio
 import json
-import os
 import time
 from dataclasses import asdict
 from typing import Any, Dict, List, Optional
 
 from dotenv import load_dotenv
 from google import genai
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from chess.match import Match
 from chess.player import PlayerState
@@ -16,7 +15,6 @@ from .lobby import Lobby
 
 load_dotenv()
 
-DEFAULT_CONFIG = """{"rulesets": [{"jump": false, "target_moves": "def mv_func(n: int): return [(0, 1), (0, 2)] if n == 1 else [(0, 1)]", "target_takes": "def tk_func(n: int): return [(-1, 1), (1, 1)]", "max_range": 1}, {"jump": false, "target_moves": "def mv_func(n: int): return [(0, 1), (0, -1), (1, 0), (-1, 0)]", "target_takes": "def tk_func(n: int): return [(0, 1), (0, -1), (1, 0), (-1, 0)]", "max_range": 7}, {"jump": false, "target_moves": "def mv_func(n: int): return [(1, 1), (1, -1), (-1, 1), (-1, -1)]", "target_takes": "def tk_func(n: int): return [(1, 1), (1, -1), (-1, 1), (-1, -1)]", "max_range": 7}, {"jump": true, "target_moves": "def mv_func(n: int): return [(1, 2), (1, -2), (-1, 2), (-1, -2), (2, 1), (2, -1), (-2, 1), (-2, -1)]", "target_takes": "def tk_func(n: int): return [(1, 2), (1, -2), (-1, 2), (-1, -2), (2, 1), (2, -1), (-2, 1), (-2, -1)]", "max_range": 1}, {"jump": true, "target_moves": "def mv_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "target_takes": "def tk_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "max_range": 1}, {"jump": false, "target_moves": "def mv_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "target_takes": "def tk_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)]", "max_range": 2}], "pieces": [{"name": "Spirit Scout", "desc": "A nimble, forward-moving piece that advances steadily, but can only capture diagonally.", "move_desc": "Moves one square forward, or two squares forward on its first move. Captures one square diagonally forward.", "rulesets": [0]}, {"name": "Glimmer Rook", "desc": "An ethereal piece moving in straight lines, leaving a shimmering trail.", "move_desc": "Moves any number of squares horizontally or vertically.", "rulesets": [1]}, {"name": "Shadow Bishop", "desc": "A cryptic piece darting across the diagonals, always staying on its chosen color.", "move_desc": "Moves any number of squares diagonally.", "rulesets": [2]}, {"name": "Stalker Knight", "desc": "A sneaky, unpredictable jumper, striking from unexpected angles.", "move_desc": "Jumps in an 'L' shape: two squares in one cardinal direction, then one square perpendicularly.", "rulesets": [3]}, {"name": "Phantom Queen", "desc": "The most powerful piece, combining the swiftness of the Glimmer Rook and the cunning of the Shadow Bishop.", "move_desc": "Moves any number of squares horizontally, vertically, or diagonally.", "rulesets": [1, 2]}, {"name": "King Sovereign", "desc": "The royal piece, whose safety is paramount. It moves slowly but deliberately.", "move_desc": "Moves one square in any direction (horizontally, vertically, or diagonally).", "rulesets": [4]}, {"name": "Mystic Charger", "desc": "A guardian with limited reach but surprising mobility, combining a short slide with a knight's jump.", "move_desc": "Moves up to two squares in any direction (horizontally, vertically, or diagonally), AND also jumps like a Stalker Knight.", "rulesets": [5, 3]}], "starting_pos": [{"x": 0, "y": 1, "piece": 0}, {"x": 1, "y": 1, "piece": 0}, {"x": 2, "y": 1, "piece": 0}, {"x": 3, "y": 1, "piece": 0}, {"x": 4, "y": 1, "piece": 0}, {"x": 5, "y": 1, "piece": 0}, {"x": 6, "y": 1, "piece": 0}, {"x": 7, "y": 1, "piece": 0}, {"x": 0, "y": 0, "piece": 1}, {"x": 7, "y": 0, "piece": 1}, {"x": 1, "y": 0, "piece": 6}, {"x": 6, "y": 0, "piece": 6}, {"x": 2, "y": 0, "piece": 2}, {"x": 5, "y": 0, "piece": 2}, {"x": 3, "y": 0, "piece": 4}, {"x": 4, "y": 0, "piece": 5}]}"""
 
 # structured schema for gemini
 class Ruleset(BaseModel):
@@ -24,21 +22,26 @@ class Ruleset(BaseModel):
     target_moves: str
     target_takes: str
     max_range: int
+
+
 class Piece(BaseModel):
     name: str
     desc: str
     move_desc: str
     rulesets: List[int]
 
+
 class StartPos(BaseModel):
     x: int
     y: int
     piece: int  # index into pieces
 
+
 class ChessConfig(BaseModel):
     rulesets: List[Ruleset]
     pieces: List[Piece]
     starting_pos: List[StartPos]
+
 
 # Connection for a signle player
 class PlayerConnection:
@@ -71,19 +74,28 @@ class Server:
         # TODO! use match uid instead of player id key, this uses playerid key rn
         self.matches: Dict[int, Match] = {}
         self.id = 0
-        
         self.gemini = genai.Client()
         self.gemini_prompt = """
-> Generate a fun and random chess variant, that takes place on an 8x8 chessboard. The structure of pawns on the front rank does not need to be followed. You must deviate from classical chess structure in favor of creativity, and do not include any classical chess pieces.
-> * Output must follow the `ChessGame` schema.
-> * Each ruleset is either **jumping** (knight-like) or **sliding** (bishop/rook/queen-like). Sliding rules respect `max_range`.
-> * `target_moves` and `target_takes` are Python functions mapping `move_num → List[Tuple[int,int]]`. For pawns, moves differ from takes; for most pieces they match. usually, these will be the same (eg. bishop, rook, queen), but this will differ for pawns e.g. target_moves(1) -> [(0, 1), (0, 2)], target_moves(...) -> [(0,1)], target_takes(...) -> [(-1, 1), (1, 1)]. The direction vectors are relative to the side the player is on. These functions should be defined in working python code, with the name of the target_moves function in code being def mv_func(n: int)..., and target_takes being tk_func... Incorporate unique mechanics based on the current move number of the piece, an example is an oscilating piece that moves on a different axis based on whether the num is even or odd, etc. The function must be on ONE LINE such that it does not encounter any parsing errors when loading, or contain explicit newline characters.
-> * Direction vectors are **relative to the player’s side**: each player sees their pieces starting at the bottom.
-> * `pieces` reference rulesets by index, and multiple movesets can be composed into one piece, including mixing jumping and sliding.
-> * `starting_pos` maps `(x,y)` → piece index. Only needs to be defined for a single side, as it will be mirrored on the other side.
-> * ``
-> Be creative with names, descriptions, and moves."""
-
+> Craft a mirrored two-player strategy ruleset for an 8-by-8 grid world. Each side deploys custom unit types that obey the following framework:
+> * Output must be JSON only and validate against the schema {"rulesets": List[Ruleset], "pieces": List[Piece], "starting_pos": List[StartPos]}. Do not include prose outside the JSON. Creating a large amount of unique pieces is encouraged, generally above 6. Unique games with 1/2 pieces must have some mechanic that makes it a fun or interesting game to play, including a unique starting position, unique, never-seen-before abilities for the single/few pieces, etc.
+> * A ruleset is either sliding (ray-extended up to `max_range`) or jumping (single hop that ignores blockers). The boolean `jump` selects behaviour.
+> * You may compose multiple rulesets for one piece by providing multiple indices in a piece's rulesets: List[int] array. For example, creating a queen that can also jump like a knight.
+> * Movement generators `target_moves` and `target_takes` MUST be Python function definitions named `mv_func` and `tk_func`. They accept an integer `n` (the unit’s own action count, starting at 1) and RETURN a List[Tuple[int,int]] of (dx, dy) offsets relative to the owning side’s forward direction (positive y away from the owning player).
+> * These functions MUST be valid Python 3 code and MUST compile. Prefer a single-line `return ...` expression after the function header. No imports or external names.
+> * These functions MUST NOT reference each other, for example, tk_func cannot call mv_func within it, as they are independently processed.
+> * Encode alternating/conditional patterns USING `n` inside `mv_func`/`tk_func` (e.g. parity, thresholds). DO NOT compose multiple rulesets just to alternate; compose rulesets only to combine different behaviours (e.g. add jumps to a slider) or to separate movement vs capture targeting.
+> * Sliding offsets are expanded internally according to `max_range`. For a two-step opening advance followed by one-step advances, set `max_range = 1` and return both distances in `mv_func` on the first action, e.g.:
+>   def mv_func(n: int): return [(0, m) for m in ([1, 2] if n == 1 else [1])]
+>   def tk_func(n: int): return [(-1, 1), (1, 1)]
+> * Example of parity-based alternation encoded in one ruleset:
+>   def mv_func(n: int): return [(0,1),(0,-1),(1,0),(-1,0)] if n % 2 == 0 else [(1,1),(1,-1),(-1,1),(-1,-1)]
+>   def tk_func(n: int): return mv_func(n)
+> * `starting_pos` lists placements for one side only; the engine mirrors across the horizontal axis for the opponent. Deviating from the standard chess format is encouraged (E.g. a triangle/trapezoid shaped starting configuration, or an arc, or something strategically challenging) to make the game more interesting or follow the theme better. 
+> * This includes generally avoiding a piece on the front rank that just moves forward and captures diagonally, as that is a chess pawn. Be more creative  
+> * Honour directionality, blockers, and occupancy typical of grid tactics: slides stop at the first blocker, moves require empty destinations, captures require opponents.
+> Name units creatively (avoid classic terms), keep descriptions vivid but mechanics precise and machine-parseable. Prioritize unqiueness, avoiding creating pieces with the same moveset of classical chess, and creating pieces that will lead to fun strategy, balancing those pieces. For example, if there is a piece that is unable to move but can capture pieces, then it should have a wide range of capture. If there is a piece that is unable to capture, then it should have a wide range of movement (e.g. a large circle or something similar, circle rulesets can be made with a slide ruleset, and the appropriate movement vectors). 
+> You MUST avoid creating pieces with the same moveset of classical chess at any cost as that ruins uniqueness (for example, a ruleset where a piece moves two times forward on the first turn, and captures one diagonally, which belongs to a pawn in classical chess). 
+"""
 
     async def start(self):
         server = await asyncio.start_server(self.handle_client, "0.0.0.0", 9090)
@@ -119,10 +131,8 @@ class Server:
         print(f"Processing packet for {player.player_state.name}: {packet}")
         if mtype == "name":
             player.player_state.name = packet["name"]
-            print(f"Registered new player {packet["name"]}")
-            await player.player_state.replicate(
-                self, "playermod", exclude_self=False
-            )
+            print(f"Registered new player {packet['name']}")
+            await player.player_state.replicate(self, "playermod", exclude_self=False)
 
         elif mtype == "move":
             from_coord = packet["from"]
@@ -130,8 +140,7 @@ class Server:
 
             if player.match and player.match.game:
                 success = player.match.game.move_piece(
-                    (from_coord[0], from_coord[1]),
-                    (to_coord[0], to_coord[1])
+                    (from_coord[0], from_coord[1]), (to_coord[0], to_coord[1])
                 )
 
                 print(f"{player.match.p1.name}")
@@ -145,16 +154,12 @@ class Server:
 
                 print("got it")
                 if other_player:
-                    await other_player.send({
-                        "type": "move",
-                        "from": from_coord,
-                        "to": to_coord
-                    })
-                    print("AWFAWAGESSG");
+                    await other_player.send(
+                        {"type": "move", "from": from_coord, "to": to_coord}
+                    )
+                    print("AWFAWAGESSG")
 
                 print("AWFW")
-
-
 
         elif mtype == "matchcreate":
             if player.match is not None:
@@ -164,13 +169,15 @@ class Server:
             self.matches[player.player_state.id] = match
             player.match = match
 
-            await self.broadcast({"type": "matchcreate", "host_id": player.player_state.id})
+            await self.broadcast(
+                {"type": "matchcreate", "host_id": player.player_state.id}
+            )
 
         elif mtype == "matchjoin":
             # if the requesting player is in a match/waiting for a match
             if player.match is not None:
                 return
-            
+
             # if the other player this one requested to join doesn't have a match
             joining_id = packet["player_id"]
             other = self.id_to_conn[joining_id]
@@ -188,32 +195,43 @@ class Server:
             player.match = other.match
             player.match.p2 = player.player_state
 
-
-            await self.broadcast({"type": "matchremove", "host_id": other.player_state.id})
-
-            await player.send({"type": "matchstart", "other_id": other.player_state.id, "team": 1})
-            await other.send({"type": "matchstart", "other_id": player.player_state.id, "team": 0})
-
-            response = self.gemini.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=self.gemini_prompt,
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": ChessConfig,
-                },
+            await self.broadcast(
+                {"type": "matchremove", "host_id": other.player_state.id}
             )
 
-            config = response.text
-            # config = DEFAULT_CONFIG
-            print(config)
+            await player.send(
+                {"type": "matchstart", "other_id": other.player_state.id, "team": 1}
+            )
+            await other.send(
+                {"type": "matchstart", "other_id": player.player_state.id, "team": 0}
+            )
+
+            try:
+                response = self.gemini.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=self.gemini_prompt,
+                    config={
+                        "response_mime_type": "application/json",
+                        "response_schema": ChessConfig,
+                    },
+                )
+                config_json = response.text
+            except Exception as exc:
+                error_msg = f"Failed to generate match config: {exc}"
+                print(error_msg)
+                await player.send({"type": "error", "message": error_msg})
+                await other.send({"type": "error", "message": error_msg})
+                return
 
             if other.match:
                 from chess.Game import Game
-                other.match.game = Game.from_config(config, [player.player_state, other.player_state])
 
-            await player.send({"type": "matchconfig", "config": config})
-            await other.send({"type": "matchconfig", "config": config})
+                other.match.game = Game.from_config(
+                    config_json, [player.player_state, other.player_state]
+                )
 
+            await player.send({"type": "matchconfig", "config": config_json})
+            await other.send({"type": "matchconfig", "config": config_json})
 
     async def handle_client(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
@@ -229,22 +247,19 @@ class Server:
         self.id_to_conn[player_state.id] = player_connection
 
         # send back all the other players
-        player_states = [
-            asdict(p.player_state) for p in self.clients.values()
-        ]
+        player_states = [asdict(p.player_state) for p in self.clients.values()]
         await self.send(writer, {"type": "playerlist", "players": player_states})
 
         # send back all available matches
         match_list = [
             {"host_id": host_id, "host_name": match.p1.name}
             for host_id, match in self.matches.items()
-            if match.p2 is None  # only send matches that are waiting for a second player
+            if match.p2
+            is None  # only send matches that are waiting for a second player
         ]
         await self.send(writer, {"type": "matchlist", "matches": match_list})
 
-        await player_state.replicate(
-            self, "playerjoin", exclude_self=False
-        )
+        await player_state.replicate(self, "playerjoin", exclude_self=False)
 
         try:
             while True:

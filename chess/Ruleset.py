@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Callable, List, Tuple
 
 
 def _normalise_func(src: str) -> str:
@@ -48,6 +48,27 @@ def _normalise_func(src: str) -> str:
 
 
 class Ruleset:
+    # NOTE for most regular pieces (eg. bishop, rook, queen) these function will be the same, but for pieces like the pawn for example, they must be different.
+
+    # a function from the current move number of the piece starting from 1 (not the player's move number)
+    # to the list of movement vectors relative to the player's side, which determines where the piece can move to, but not necessarily capture.
+    mv_func: Callable[[int], List[Tuple[int, int]]]
+
+    # a function from the current move number of the piece starting from 1 (not the player's move number)
+    # to the list of movement vectors relative to the player's side, which determines where the piece can TAKE another, but not necessarily move to.
+    tk_func: Callable[[int], List[Tuple[int, int]]]
+
+    # if jump is true, then the piece is a "jump" type, and does not have to worry about 
+    # pieces blocking it, unless it cannot take a piece where it lands. 
+    # TODO! THIS MAY BE REMOVED LATER, as jump pieces can just be modeled with a movement
+    # vector that isn't adjacent to the current tile (e.g. <1, 2>). This is unclear, and
+    # will be decided later as more features get added (e.g. pierce, jump depth, etc)
+    jump: bool
+
+    # ONLY EFFECTIVE FOR SLIDE TYPES
+    # decides the amount of times a slide type piece can apply it's movement vector
+    max_range: int
+
     def __init__(self, mv_func_str: str, tk_func_str: str):
         mv_ns: dict[str, object] = {}
         exec(_normalise_func(mv_func_str), {}, mv_ns)
