@@ -1,4 +1,4 @@
-A Nexus guardian? Tide-weaver??
+### A Nexus guardian? Tide-weaver??
 
 # What The Chess??!?!
 
@@ -12,6 +12,10 @@ The project uses `uv` for venv management. To get started, run `uv sync` in the 
 
 - To run the server: `uv run -m server.main`
 - To run the client: `uv run -m client.main`
+
+The client accepts an optional IP argument as the first cmd-line argument. Without it, the server IP defaults to localhost.
+
+The server accepts an optional Gemini API key as the first cmd-line argument. Without it, the server attempts to use the GOOGLE_API_KEY env variable. 
 
 ## Contributors
 
