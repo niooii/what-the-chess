@@ -2,7 +2,7 @@
 
 # What The Chess??!?!
 
-What The Chess is a unique, multiplayer spin on chess, and also our BigRed//Hacks 2025 submission. 
+What The Chess is our multiplayer, unique spin on chess, and also our BigRed//Hacks 2025 submission. 
 
 Upon joining a match, both player's recieve the same set of **AI generated pieces**, with their own unique names and rules for moving/capturing across the board, whether it be *pieces with oscillating movement directions each turn, pieces that cannot move unless capturing or pieces that can move almost anywhere, but cannot capture*, the possibilities are here! We generate pieces and their rulesets using Google's Gemini API, making the chance of getting the same pieces in different matches near zero. 
 
