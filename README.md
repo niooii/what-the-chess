@@ -23,7 +23,7 @@ The server accepts an optional Gemini API key as the first cmd-line argument. Wi
 
 - [@zhn2605](https://github.com/zhn2605)
 - [@alias1233](https://github.com/alias1233)
-- [@nioii](https://github.com/nioii)
+- [@niooii](https://github.com/niooii)
 
 ## Pictures
 <img width="1526" height="974" alt="image" src="https://github.com/user-attachments/assets/9a21f017-9574-456e-9f6e-2b6a9c3b7eae" />
